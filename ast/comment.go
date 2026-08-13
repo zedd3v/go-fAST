@@ -114,3 +114,42 @@ func (c *Comment) SetFollowedByNewline(v bool) {
 		c.Newlines &^= CommentNewlineFollowed
 	}
 }
+
+// Move rewrites AttachedTo from → to for every comment.
+// Used when a transform replaces a node and wants its comments.
+// New nodes with span 0 get no comments unless the transform calls Move.
+// Linear scan. The table is ordered by Start, not AttachedTo. N is small
+// (0–10k). O(n) is the API. Do not binary-search Start.
+func Move(comments []Comment, from, to Idx) {
+	for i := range comments {
+		if comments[i].AttachedTo == from {
+			comments[i].AttachedTo = to
+		}
+	}
+}
+
+// Leading returns comments with AttachedTo == start && IsLeading().
+// Linear scan. The table is ordered by comment Start, which is *before*
+// AttachedTo for a leading comment, so a binary search on Start for
+// start == tokenStart finds the wrong row (or none). N is small
+// (0–10k). O(n) is the API. Do not binary-search Start.
+func Leading(comments []Comment, start Idx) []Comment {
+	var out []Comment
+	for i := range comments {
+		if comments[i].AttachedTo == start && comments[i].IsLeading() {
+			out = append(out, comments[i])
+		}
+	}
+	return out
+}
+
+// Trailing is the same scan with IsTrailing().
+func Trailing(comments []Comment, start Idx) []Comment {
+	var out []Comment
+	for i := range comments {
+		if comments[i].AttachedTo == start && comments[i].IsTrailing() {
+			out = append(out, comments[i])
+		}
+	}
+	return out
+}
