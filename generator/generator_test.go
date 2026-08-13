@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/t14raptor/go-fast/parser"
@@ -330,11 +331,16 @@ func TestLeadingBlockCommentNotEmitted(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 
-	if got := Generate(p); got != "var v67 = heap[2];\n" {
-		t.Errorf("Generate = %q; want %q", got, "var v67 = heap[2];\n")
+	wantPretty := "/* 7355685938729369933 pc=114796 dk=5 */\nvar v67 = heap[2];\n"
+	if got := Generate(p); got != wantPretty {
+		t.Errorf("Generate = %q; want %q", got, wantPretty)
 	}
-	if got := GenerateMinified(p); got != "var v67=heap[2];" {
-		t.Errorf("GenerateMinified = %q; want %q", got, "var v67=heap[2];")
+	wantMin := "/* 7355685938729369933 pc=114796 dk=5 */var v67=heap[2];"
+	if got := GenerateMinified(p); got != wantMin {
+		t.Errorf("GenerateMinified = %q; want %q", got, wantMin)
+	}
+	if got := GenerateMinified(p); strings.Contains(got, "//") {
+		t.Errorf("GenerateMinified rewrote dump meta as //: %q", got)
 	}
 }
 
@@ -345,10 +351,143 @@ func TestLeadingBlockCommentOnExpressionStatementNotEmitted(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 
-	if got := Generate(p); got != "heap[2];\n" {
-		t.Errorf("Generate = %q; want %q", got, "heap[2];\n")
+	wantPretty := "/* 7355685938729369933 pc=114796 dk=5 */\nheap[2];\n"
+	if got := Generate(p); got != wantPretty {
+		t.Errorf("Generate = %q; want %q", got, wantPretty)
 	}
-	if got := GenerateMinified(p); got != "heap[2];" {
-		t.Errorf("GenerateMinified = %q; want %q", got, "heap[2];")
+	wantMin := "/* 7355685938729369933 pc=114796 dk=5 */heap[2];"
+	if got := GenerateMinified(p); got != wantMin {
+		t.Errorf("GenerateMinified = %q; want %q", got, wantMin)
+	}
+}
+
+func TestMidExpressionBlockComment(t *testing.T) {
+	src := "var v67 = /* mid */ heap[2]"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	want := "var v67 = /* mid */ heap[2];\n"
+	if got := Generate(p); got != want {
+		t.Errorf("Generate = %q; want %q", got, want)
+	}
+}
+
+func TestTrailingLineCommentDoesNotSwallowSemicolon(t *testing.T) {
+	src := "var x = 1 // trail"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, ";") {
+		t.Fatalf("pretty missing semicolon: %q", got)
+	}
+	if strings.Contains(got, "// trail;") {
+		t.Fatalf("line comment swallowed semicolon: %q", got)
+	}
+	if !strings.Contains(got, "// trail") {
+		t.Fatalf("pretty dropped trailing comment: %q", got)
+	}
+}
+
+func TestLastStatementTrailingLineComment(t *testing.T) {
+	src := "foo(); // trail"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "// trail") {
+		t.Fatalf("last-statement trailing comment missing: %q", got)
+	}
+	if strings.Contains(got, "// trail;") {
+		t.Fatalf("line comment swallowed semicolon: %q", got)
+	}
+}
+
+func TestMinifyDropsNormalLineComment(t *testing.T) {
+	assertMinified(t, "// line\nvar x = 1", "var x=1;")
+}
+
+func TestMinifyPureCanonical(t *testing.T) {
+	src := "// @__PURE__\nfoo()"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := GenerateMinified(p)
+	want := "/* @__PURE__ */ foo();"
+	if got != want {
+		t.Errorf("GenerateMinified = %q; want %q", got, want)
+	}
+	if strings.Contains(got, "/*  @__PURE__") || strings.Contains(got, "*/ x */") {
+		t.Errorf("wrapped line body into a block: %q", got)
+	}
+}
+
+func TestMinifyPureIdempotent(t *testing.T) {
+	src := "/* @__PURE__ */foo();"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	once := GenerateMinified(p)
+	p2, err := parser.Parse(once)
+	if err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	twice := GenerateMinified(p2)
+	if once != twice {
+		t.Errorf("minify not idempotent: %q then %q", once, twice)
+	}
+}
+
+func TestAsyncInnerComment(t *testing.T) {
+	src := "async /* x */ function f() {}"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "async /* x */ function") {
+		t.Fatalf("async inner comment misplaced: %q", got)
+	}
+}
+
+func TestClassMemberLeadingComment(t *testing.T) {
+	src := "class C { /* c */ static f() {} }"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "/* c */ static") {
+		t.Fatalf("class member comment misplaced: %q", got)
+	}
+}
+
+func TestObjectAsyncMethodLeadingComment(t *testing.T) {
+	src := "({ /* c */ async f() {} })"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "/* c */ async") {
+		t.Fatalf("object method comment misplaced: %q", got)
+	}
+}
+
+func TestLegalOrphanAtEOF(t *testing.T) {
+	src := "/*! license */ var x = 1"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	p.Body = nil
+	got := Generate(p)
+	if !strings.Contains(got, "/*! license */") {
+		t.Fatalf("legal orphan dropped: %q", got)
 	}
 }

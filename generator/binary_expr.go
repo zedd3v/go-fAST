@@ -8,6 +8,7 @@ type binaryExprEntry struct {
 	right     *ast.Expression
 	wrap      bool
 	ctx       context
+	leftEnd   ast.Idx
 }
 
 // genBinaryExpr linearizes nested binary/logical trees into an iterative
@@ -82,6 +83,7 @@ descend:
 			right:     right,
 			wrap:      wrap,
 			ctx:       ctx,
+			leftEnd:   left.Idx1(),
 		})
 
 		expr, minPrec = left, leftPrec
@@ -94,6 +96,10 @@ descend:
 		}
 		e := g.binaryStack[length-1]
 		g.binaryStack = g.binaryStack[:length-1]
+
+		if g.comments != nil {
+			g.printGap(e.leftEnd, e.right.Idx0())
+		}
 
 		if e.op == "in" || e.op == "instanceof" {
 			// Keyword operators (in, instanceof) always need spaces.

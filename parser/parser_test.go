@@ -2270,10 +2270,10 @@ func TestCommentsAreWhitespace(t *testing.T) {
 func TestLeadingBlockCommentRoundTrip(t *testing.T) {
 	assertRoundTrip(t,
 		"/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]",
-		"var v67 = heap[2];",
+		"/* 7355685938729369933 pc=114796 dk=5 */\nvar v67 = heap[2];",
 	)
 	assertRoundTrip(t,
 		"/* 7355685938729369933 pc=114796 dk=5 */ heap[2]",
-		"heap[2];",
+		"/* 7355685938729369933 pc=114796 dk=5 */\nheap[2];",
 	)
 }
