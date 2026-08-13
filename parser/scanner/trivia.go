@@ -65,6 +65,7 @@ func (t *TriviaBuilder) addComment(start, end ast.Idx, kind ast.CommentKind, src
 	if kind == ast.CommentLine {
 		c.Newlines |= ast.CommentNewlineFollowed
 		if !t.sawNewline && !isStayLeadingToken(t.previousKind) && !c.StayLeading() {
+			t.markPendingTrailing()
 			c.Position = ast.CommentTrailing
 			c.AttachedTo = t.previousStart
 			t.processed = len(t.comments) + 1
@@ -84,15 +85,19 @@ func (t *TriviaBuilder) handleNewline() {
 		last := &t.comments[n-1]
 		last.Newlines |= ast.CommentNewlineFollowed
 		if !t.sawNewline && !last.StayLeading() {
-			for i := t.processed; i < n; i++ {
-				t.comments[i].Position = ast.CommentTrailing
-				t.comments[i].AttachedTo = t.previousStart
-			}
+			t.markPendingTrailing()
 			t.processed = n
 		}
 	}
 	t.sawNewline = true
 	t.sawNewlineForComment = true
+}
+
+func (t *TriviaBuilder) markPendingTrailing() {
+	for i := t.processed; i < len(t.comments); i++ {
+		t.comments[i].Position = ast.CommentTrailing
+		t.comments[i].AttachedTo = t.previousStart
+	}
 }
 
 func (t *TriviaBuilder) handleToken(kind token.Token, start ast.Idx) {

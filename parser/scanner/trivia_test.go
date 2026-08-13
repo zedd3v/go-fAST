@@ -182,6 +182,31 @@ func TestTriviaClassification(t *testing.T) {
 			}},
 		},
 		{
+			name: "trailing line after pending block",
+			src:  "foo() /* a */ // b",
+			want: []want{
+				{text: "/* a */", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ")"},
+				{text: "// b", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ")"},
+			},
+		},
+		{
+			name: "trailing line after pending blocks",
+			src:  "foo() /* a */ /* b */ // c",
+			want: []want{
+				{text: "/* a */", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ")"},
+				{text: "/* b */", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ")"},
+				{text: "// c", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ")"},
+			},
+		},
+		{
+			name: "trailing line after pending block and semicolon",
+			src:  "foo(); /* a */ // b",
+			want: []want{
+				{text: "/* a */", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ";"},
+				{text: "// b", pos: ast.CommentTrailing, content: ast.ContentNone, attach: ";"},
+			},
+		},
+		{
 			name: "hashbang skipped",
 			src:  "#!/usr/bin/env node\nvar x",
 			want: nil,
