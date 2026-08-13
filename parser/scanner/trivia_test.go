@@ -211,6 +211,79 @@ func TestTriviaClassification(t *testing.T) {
 			src:  "#!/usr/bin/env node\nvar x",
 			want: nil,
 		},
+		{
+			name: "empty block",
+			src:  "/**/var x",
+			want: []want{{text: "/**/", pos: ast.CommentLeading, content: ast.ContentNone, attach: "var"}},
+		},
+		{
+			name: "empty line",
+			src:  "//\nvar x",
+			want: []want{{text: "//", pos: ast.CommentLeading, content: ast.ContentNone, attach: "var"}},
+		},
+		{
+			name: "trailing same-line block before eof",
+			src:  "foo() /* t */",
+			want: []want{{text: "/* t */", pos: ast.CommentLeading, content: ast.ContentNone, useIdx: true, attachAt: 13}},
+		},
+		{
+			name: "file is only a comment",
+			src:  "/* only */",
+			want: []want{{text: "/* only */", pos: ast.CommentLeading, content: ast.ContentNone, useIdx: true, attachAt: 10}},
+		},
+		{
+			name: "eof line comment",
+			src:  "var x//eof",
+			want: []want{{text: "//eof", pos: ast.CommentTrailing, content: ast.ContentNone, attach: "x"}},
+		},
+		{
+			name: "crlf line comment",
+			src:  "a // c\r\nb",
+			want: []want{{text: "// c", pos: ast.CommentTrailing, content: ast.ContentNone, attach: "a"}},
+		},
+		{
+			name: "block contains line markers",
+			src:  "/* // not a line\n */ var x",
+			want: []want{{text: "/* // not a line\n */", pos: ast.CommentLeading, content: ast.ContentNone, attach: "var"}},
+		},
+		{
+			name: "first star-slash wins",
+			src:  "/* a */ + x",
+			want: []want{{text: "/* a */", pos: ast.CommentLeading, content: ast.ContentNone, attach: "+"}},
+		},
+		{
+			name: "nosideeffects hash",
+			src:  "/* #__NO_SIDE_EFFECTS__ */ function f(){}",
+			want: []want{{text: "/* #__NO_SIDE_EFFECTS__ */", pos: ast.CommentLeading, content: ast.ContentNoSideEffects, attach: "function"}},
+		},
+		{
+			name: "pure with spaces",
+			src:  "/*  @__PURE__  */ foo()",
+			want: []want{{text: "/*  @__PURE__  */", pos: ast.CommentLeading, content: ast.ContentPure, attach: "foo"}},
+		},
+		{
+			name: "between statements",
+			src:  "a();\n/* mid */\nb();",
+			want: []want{{text: "/* mid */", pos: ast.CommentLeading, content: ast.ContentNone, attach: "b"}},
+		},
+		{
+			name: "call post comments",
+			src:  "test(123/*post: 9*/, 456/*post: 10*/)",
+			want: []want{
+				{text: "/*post: 9*/", pos: ast.CommentLeading, content: ast.ContentNone, attach: ","},
+				{text: "/*post: 10*/", pos: ast.CommentLeading, content: ast.ContentNone, attach: ")"},
+			},
+		},
+		{
+			name: "paren pure",
+			src:  "/*#__PURE__*/ (console.log('s'))",
+			want: []want{{text: "/*#__PURE__*/", pos: ast.CommentLeading, content: ast.ContentPure, attach: "("}},
+		},
+		{
+			name: "switch fallthrough",
+			src:  "switch (1) {\n    case 2:\n        3;\n    // 4\n}",
+			want: []want{{text: "// 4", pos: ast.CommentLeading, content: ast.ContentNone, attach: "}"}},
+		},
 	}
 
 	for _, tc := range cases {
@@ -375,6 +448,17 @@ func TestParseAnnotation(t *testing.T) {
 		{"// line", ast.ContentNone},
 		{"/***/", ast.ContentNone},
 		{"/*****/", ast.ContentNone},
+		{"/* #__NO_SIDE_EFFECTS__ */", ast.ContentNoSideEffects},
+		{"/*@__PURE__*/", ast.ContentPure},
+		{"/*#__PURE__*/", ast.ContentPure},
+		{"// @__PURE__", ast.ContentPure},
+		{"/* @preserve foo */", ast.ContentLegal},
+		{"/* @license MIT */", ast.ContentLegal},
+		{"/*!copyright*/", ast.ContentLegal},
+		{"/**\n * @license\n */", ast.ContentJsdocLegal},
+		{"/* 1 pc=2 dk=3 */", ast.ContentDumpMeta},
+		{"/* pc=1 dk=2 */", ast.ContentNone},
+		{"/* 1 pc=2 */", ast.ContentNone},
 	}
 	for _, tc := range cases {
 		got, err := collectComments(tc.src)
