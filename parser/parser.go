@@ -30,25 +30,27 @@ type parser struct {
 	// slices without per-call heap allocations. Each builder saves
 	// len(buf) as a mark, appends elements, copies the subslice to the
 	// arena, then restores buf to the saved mark.
-	exprBuf    []ast.Expression
-	stmtBuf    []ast.Statement
-	propBuf    []ast.Property
-	elemBuf    []ast.ClassElement
-	declBuf    []ast.VariableDeclarator
-	patBuf     []ast.Pattern
-	patPropBuf []ast.PatternProperty
+	exprBuf     []ast.Expression
+	stmtBuf     []ast.Statement
+	propBuf     []ast.Property
+	elemBuf     []ast.ClassElement
+	declBuf     []ast.VariableDeclarator
+	patBuf      []ast.Pattern
+	patPropBuf  []ast.PatternProperty
+	commentsBuf []ast.Comment
 }
 
 var parserPool = sync.Pool{
 	New: func() any {
 		return &parser{
-			exprBuf:    make([]ast.Expression, 0, 64),
-			stmtBuf:    make([]ast.Statement, 0, 64),
-			propBuf:    make([]ast.Property, 0, 16),
-			elemBuf:    make([]ast.ClassElement, 0, 16),
-			declBuf:    make([]ast.VariableDeclarator, 0, 16),
-			patBuf:     make([]ast.Pattern, 0, 16),
-			patPropBuf: make([]ast.PatternProperty, 0, 16),
+			exprBuf:     make([]ast.Expression, 0, 64),
+			stmtBuf:     make([]ast.Statement, 0, 64),
+			propBuf:     make([]ast.Property, 0, 16),
+			elemBuf:     make([]ast.ClassElement, 0, 16),
+			declBuf:     make([]ast.VariableDeclarator, 0, 16),
+			patBuf:      make([]ast.Pattern, 0, 16),
+			patPropBuf:  make([]ast.PatternProperty, 0, 16),
+			commentsBuf: make([]ast.Comment, 0, 16),
 		}
 	},
 }
@@ -58,12 +60,14 @@ func getParser(src string) *parser {
 	p.str = src
 	p.alloc = newNodeAllocator()
 	p.scanner = scanner.NewScanner(src, &p.errors)
+	p.scanner.SetCommentBuf(p.commentsBuf)
 	return p
 }
 
 func putParser(p *parser) {
 	p.str = ""
 	p.alloc = nodeAllocator{}
+	p.commentsBuf = p.scanner.TakeCommentBuf()
 	p.scanner = scanner.Scanner{}
 	p.scope = nil
 	p.errors = nil
@@ -134,11 +138,7 @@ func (p *parser) restore(state parserState) {
 }
 
 func (p *parser) peek() scanner.Token {
-	st := p.mark()
-	p.scanner.Next()
-	tok := p.scanner.Token
-	p.restore(st)
-	return tok
+	return p.scanner.Peek()
 }
 
 func (p *parser) currentString() string {

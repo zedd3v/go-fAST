@@ -77,16 +77,30 @@ func (s *Scanner) skipSingleLineComment() {
 	}
 }
 
+func (s *Scanner) recordLineComment(start ast.Idx) {
+	s.skipSingleLineComment()
+	s.trivia.addLineComment(start, s.src.Offset(), s.src)
+}
+
+func (s *Scanner) recordBlockComment(start ast.Idx) {
+	onNL := s.skipMultiLineComment()
+	kind := ast.CommentSingleLineBlock
+	if onNL {
+		kind = ast.CommentMultiLineBlock
+	}
+	s.trivia.addBlockComment(start, s.src.Offset(), kind, s.src)
+}
+
 // skipMultiLineComment skips a multi-line comment (/* already consumed).
 // Sets s.Token.OnNewLine if the comment contains a line terminator.
 // After finding a line break, switches to a faster path that only looks for `*/`.
-func (s *Scanner) skipMultiLineComment() {
+func (s *Scanner) skipMultiLineComment() (onNL bool) {
 	for {
 		b, ok := s.PeekByte()
 		if !ok {
 			// Unterminated multi-line comment
 			s.error(unterminatedMultiLineComment(s.unterminatedRange()))
-			return
+			return onNL
 		}
 
 		if !multiLineCommentTable[b] {
@@ -100,7 +114,7 @@ func (s *Scanner) skipMultiLineComment() {
 			s.ConsumeByte()
 			if s.AdvanceIfByteEquals('/') {
 				// Found */ - end of comment
-				return
+				return onNL
 			}
 		case lsOrPsFirst:
 			// 0xE2: Could be first byte of LS/PS or other Unicode char.
@@ -112,6 +126,7 @@ func (s *Scanner) skipMultiLineComment() {
 			if twoMore == lsBytes2And3 || twoMore == psBytes2And3 {
 				// LS or PS line terminator
 				s.Token.OnNewLine = true
+				onNL = true
 				s.ConsumeByte()
 				s.ConsumeByte()
 				// Ideally we'd switch to the fast path here, but irregular
@@ -127,7 +142,7 @@ func (s *Scanner) skipMultiLineComment() {
 			s.ConsumeByte()
 			// Switch to faster search that only looks for `*/`.
 			s.skipMultiLineCommentAfterLineBreak()
-			return
+			return true
 		}
 	}
 }

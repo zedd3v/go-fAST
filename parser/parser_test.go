@@ -2174,8 +2174,7 @@ func TestScannerAcceptsNonASCIISources(t *testing.T) {
 // COMMENTS
 // ===========================================================================
 
-// Leading block comments are whitespace. The scanner skips them, so they are
-// not attached to the following statement.
+// Leading block comments are recorded on Program and attached to the next token.
 func TestLeadingBlockCommentAST(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
 	p := mustParse(t, src)
@@ -2186,6 +2185,25 @@ func TestLeadingBlockCommentAST(t *testing.T) {
 	decl, ok := firstStmt(p, 0).(*ast.VariableDeclaration)
 	if !ok {
 		t.Fatalf("stmt = %T; want *VariableDeclaration", firstStmt(p, 0))
+	}
+	if p.Source != src {
+		t.Errorf("Source = %q; want input", p.Source)
+	}
+	if len(p.Comments) != 1 {
+		t.Fatalf("comments = %d; want 1", len(p.Comments))
+	}
+	c := p.Comments[0]
+	if !c.IsLeading() {
+		t.Errorf("position = %v; want Leading", c.Position)
+	}
+	if c.Content != ast.ContentDumpMeta {
+		t.Errorf("content = %v; want DumpMeta", c.Content)
+	}
+	if c.AttachedTo != decl.Idx {
+		t.Errorf("AttachedTo = %d; want %d (var)", c.AttachedTo, decl.Idx)
+	}
+	if c.Kind != ast.CommentSingleLineBlock {
+		t.Errorf("kind = %v; want SingleLineBlock", c.Kind)
 	}
 	if decl.Kind != ast.VarKindVar {
 		t.Errorf("kind = %v; want var", decl.Kind)
@@ -2209,6 +2227,25 @@ func TestLeadingBlockCommentAST(t *testing.T) {
 	}
 	if got := comp.Expr.MustNumberLit().Value; got != 2 {
 		t.Errorf("index = %v; want 2", got)
+	}
+}
+
+func TestArrowCommentRewindNoDup(t *testing.T) {
+	src := "async (/* c */ x) => x"
+	p := mustParse(t, src)
+	if len(p.Comments) != 1 {
+		t.Fatalf("comments = %d; want 1", len(p.Comments))
+	}
+	if p.Comments[0].Text(src) != "/* c */" {
+		t.Fatalf("text = %q", p.Comments[0].Text(src))
+	}
+}
+
+func TestCommentTableCopiedOutOfPool(t *testing.T) {
+	p1 := mustParse(t, "/* a */ var x")
+	_ = mustParse(t, "/* bbb */ var y")
+	if len(p1.Comments) != 1 || p1.Comments[0].Text(p1.Source) != "/* a */" {
+		t.Fatalf("p1 comments corrupted: %#v", p1.Comments)
 	}
 }
 

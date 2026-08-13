@@ -15,13 +15,19 @@ type Scanner struct {
 	EscapedStr string // escape-processed string for current token
 
 	errors *error
+
+	trivia TriviaBuilder
+
+	hasPeek   bool
+	peeked    Token
+	peekedEsc string
 }
 
 func NewScanner(src string, errors *error) Scanner {
 	return Scanner{
-		src: NewSource(src),
-
+		src:    NewSource(src),
 		errors: errors,
+		trivia: newTriviaBuilder(),
 	}
 }
 
@@ -51,14 +57,34 @@ type Checkpoint struct {
 	tok        Token
 	escapedStr string
 	errors     error
+
+	hasPeek   bool
+	peeked    Token
+	peekedEsc string
+
+	commentsLen          int
+	processed            int
+	sawNewline           bool
+	sawNewlineForComment bool
+	previousKind         token.Token
+	previousStart        ast.Idx
 }
 
 func (s *Scanner) Checkpoint() Checkpoint {
 	return Checkpoint{
-		pos:        s.src.pos,
-		tok:        s.Token,
-		escapedStr: s.EscapedStr,
-		errors:     *s.errors,
+		pos:                  s.src.pos,
+		tok:                  s.Token,
+		escapedStr:           s.EscapedStr,
+		errors:               *s.errors,
+		hasPeek:              s.hasPeek,
+		peeked:               s.peeked,
+		peekedEsc:            s.peekedEsc,
+		commentsLen:          len(s.trivia.comments),
+		processed:            s.trivia.processed,
+		sawNewline:           s.trivia.sawNewline,
+		sawNewlineForComment: s.trivia.sawNewlineForComment,
+		previousKind:         s.trivia.previousKind,
+		previousStart:        s.trivia.previousStart,
 	}
 }
 
@@ -67,6 +93,60 @@ func (s *Scanner) Rewind(c Checkpoint) {
 	s.Token = c.tok
 	s.EscapedStr = c.escapedStr
 	*s.errors = c.errors
+	s.hasPeek = c.hasPeek
+	s.peeked = c.peeked
+	s.peekedEsc = c.peekedEsc
+	s.trivia.comments = s.trivia.comments[:c.commentsLen]
+	s.trivia.processed = c.processed
+	s.trivia.sawNewline = c.sawNewline
+	s.trivia.sawNewlineForComment = c.sawNewlineForComment
+	s.trivia.previousKind = c.previousKind
+	s.trivia.previousStart = c.previousStart
+}
+
+func (s *Scanner) Next() {
+	if s.hasPeek {
+		s.Token = s.peeked
+		s.EscapedStr = s.peekedEsc
+		s.hasPeek = false
+		return
+	}
+	s.scan()
+}
+
+func (s *Scanner) Peek() Token {
+	if !s.hasPeek {
+		savedTok := s.Token
+		savedEsc := s.EscapedStr
+		s.scan()
+		s.peeked = s.Token
+		s.peekedEsc = s.EscapedStr
+		s.Token = savedTok
+		s.EscapedStr = savedEsc
+		s.hasPeek = true
+	}
+	return s.peeked
+}
+
+func (s *Scanner) SetCommentBuf(buf []ast.Comment) {
+	s.trivia.comments = buf[:0]
+	s.trivia.Reset()
+}
+
+func (s *Scanner) TakeCommentBuf() []ast.Comment {
+	buf := s.trivia.comments[:0]
+	s.trivia.comments = nil
+	return buf
+}
+
+func (s *Scanner) TakeComments() []ast.Comment {
+	n := len(s.trivia.comments)
+	if n == 0 {
+		return nil
+	}
+	out := make([]ast.Comment, n)
+	copy(out, s.trivia.comments)
+	return out
 }
 
 func (s *Scanner) Offset() ast.Idx {
@@ -103,6 +183,7 @@ func (s *Scanner) AdvanceIfByteEquals(b byte) bool {
 }
 
 func (s *Scanner) NextTemplatePart() {
+	s.hasPeek = false
 	s.Token.Idx0 = s.src.Offset() - 1
 	s.Token.Kind = s.ReadTemplateLiteral(token.TemplateMiddle, token.TemplateTail)
 	s.Token.Idx1 = s.src.Offset()

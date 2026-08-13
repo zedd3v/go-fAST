@@ -5,7 +5,6 @@ const (
 
 	Illegal
 	Eof
-	Comment
 
 	String
 	Number
@@ -141,7 +140,6 @@ const (
 var token2string = [...]string{
 	Illegal:                  "Illegal",
 	Eof:                      "Eof",
-	Comment:                  "Comment",
 	Keyword:                  "Keyword",
 	String:                   "String",
 	Boolean:                  "Boolean",

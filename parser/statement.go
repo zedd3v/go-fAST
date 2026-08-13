@@ -747,7 +747,9 @@ func (p *parser) parseSourceElements() (body ast.Statements) {
 
 func (p *parser) parseProgram() *ast.Program {
 	return &ast.Program{
-		Body: p.parseSourceElements(),
+		Body:     p.parseSourceElements(),
+		Comments: p.scanner.TakeComments(),
+		Source:   p.str,
 	}
 }
 
