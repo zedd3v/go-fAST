@@ -2169,3 +2169,74 @@ func TestScannerAdvancesOnEveryByte(t *testing.T) {
 func TestScannerAcceptsNonASCIISources(t *testing.T) {
 	assertRoundTrip(t, "var café = '☕';", "var café = '☕';")
 }
+
+// ===========================================================================
+// COMMENTS
+// ===========================================================================
+
+// Leading block comments are whitespace. The scanner skips them, so they are
+// not attached to the following statement.
+func TestLeadingBlockCommentAST(t *testing.T) {
+	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
+	p := mustParse(t, src)
+	if len(p.Body) != 1 {
+		t.Fatalf("stmt count = %d; want 1", len(p.Body))
+	}
+
+	decl, ok := firstStmt(p, 0).(*ast.VariableDeclaration)
+	if !ok {
+		t.Fatalf("stmt = %T; want *VariableDeclaration", firstStmt(p, 0))
+	}
+	if decl.Kind != ast.VarKindVar {
+		t.Errorf("kind = %v; want var", decl.Kind)
+	}
+	if got := len(decl.List); got != 1 {
+		t.Fatalf("declarator count = %d; want 1", got)
+	}
+
+	id := decl.List[0].Target.MustIdentifier()
+	if id.Name != "v67" {
+		t.Errorf("name = %q; want %q", id.Name, "v67")
+	}
+
+	mem := decl.List[0].Initializer.MustMember()
+	if got := mem.Object.MustIdentifier().Name; got != "heap" {
+		t.Errorf("object = %q; want %q", got, "heap")
+	}
+	comp, ok := mem.Property.Computed()
+	if !ok {
+		t.Fatalf("property = %v; want Computed", mem.Property.Kind())
+	}
+	if got := comp.Expr.MustNumberLit().Value; got != 2 {
+		t.Errorf("index = %v; want 2", got)
+	}
+}
+
+func TestCommentsAreWhitespace(t *testing.T) {
+	cases := []string{
+		"/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]",
+		"/* leading */ var v67 = heap[2]",
+		"var v67 = heap[2] /* trailing */",
+		"var v67 = /* mid */ heap[2]",
+		"var /* name */ v67 = heap[2]",
+		"// line\nvar v67 = heap[2]",
+		"/* a */ /* b */ var v67 = heap[2]",
+		"/* 7355685938729369933 pc=114796 dk=5 */ heap[2]",
+	}
+	for _, src := range cases {
+		if _, err := parser.Parse(src); err != nil {
+			t.Errorf("parse(%q): %v", src, err)
+		}
+	}
+}
+
+func TestLeadingBlockCommentRoundTrip(t *testing.T) {
+	assertRoundTrip(t,
+		"/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]",
+		"var v67 = heap[2];",
+	)
+	assertRoundTrip(t,
+		"/* 7355685938729369933 pc=114796 dk=5 */ heap[2]",
+		"heap[2];",
+	)
+}

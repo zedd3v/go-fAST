@@ -51,6 +51,7 @@ type Child struct {
 	Cloneable bool
 	Pointer   bool
 	Optional  bool
+	CopySlice bool
 	Interface *CloneableInterface
 }
 
@@ -58,11 +59,17 @@ func newChild(fieldName, fieldType string, cloneable, pointer, optional bool) Ch
 	return Child{FieldName: fieldName, FieldType: fieldType, Cloneable: cloneable, Pointer: pointer, Optional: optional}
 }
 
+func newCopySliceChild(fieldName, fieldType string) Child {
+	return Child{FieldName: fieldName, FieldType: fieldType, CopySlice: true}
+}
+
 // fieldValue returns the expression assigned to a struct field in the cloned
 // literal. Optional and interface children stage their value in a preamble
 // variable (see the template); the rest are inlined.
 func fieldValue(c Child) string {
 	switch {
+	case c.CopySlice:
+		return strings.ToLower(c.FieldName)
 	case !c.Cloneable:
 		return "n." + c.FieldName
 	case c.Interface != nil:
@@ -168,6 +175,9 @@ func (n *{{.Name}}) Clone() *{{.Name}} {
 	if n.{{.FieldName}} != nil {
 		{{toLower .FieldName}} = n.{{.FieldName}}.Clone()
 	}
+{{- else if .CopySlice}}
+	{{toLower .FieldName}} := make([]{{.FieldType}}, len(n.{{.FieldName}}))
+	copy({{toLower .FieldName}}, n.{{.FieldName}})
 {{- end}}
 {{- end}}
 	return &{{.Name}}{ {{cloneFields .}} }
@@ -269,7 +279,7 @@ func findCloneableNodes(f *ast.File, specs map[string]astgen.UnionSpec) (types [
 			}
 
 			switch typeSpec.Name.Name {
-			case "ScopeContext", "Id":
+			case "ScopeContext", "Id", "Comment", "CommentKind", "CommentPosition", "CommentNewlines", "CommentContent":
 				continue
 			}
 
@@ -319,10 +329,19 @@ func findStructChildren(fields []*ast.Field) (children []Child) {
 			switch fieldType.Name {
 			case "Idx", "any", "bool", "int", "ScopeContext", "string", "MethodKind", "Token", "VarKind",
 				"float64", "UnaryOperator", "AssignmentOperator", "BinaryOperator", "UpdateOperator", "LogicalOperator",
-				"MetaPropertyKind":
+				"MetaPropertyKind", "Comment", "CommentKind", "CommentPosition", "CommentNewlines", "CommentContent":
 				children = appendNamedChildren(children, field.Names, fieldType.Name, false, false, optional)
 			default:
 				children = appendNamedChildren(children, field.Names, fieldType.Name, true, false, optional)
+			}
+		case *ast.ArrayType:
+			// []Comment is a scalar table. Copy the slice; do not visit or deep-clone elements.
+			elem, ok := fieldType.Elt.(*ast.Ident)
+			if !ok || elem.Name != "Comment" {
+				continue
+			}
+			for _, name := range field.Names {
+				children = append(children, newCopySliceChild(name.Name, elem.Name))
 			}
 		case *ast.StarExpr:
 			if ident, ok := fieldType.X.(*ast.Ident); ok {

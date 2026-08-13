@@ -322,3 +322,33 @@ func TestTemplateLiteralMinified(t *testing.T) {
 	assertMinified(t, "(class {})`x`;", "(class {})`x`;")
 	assertMinified(t, "({})`x`;", "({})`x`;")
 }
+
+func TestLeadingBlockCommentNotEmitted(t *testing.T) {
+	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if got := Generate(p); got != "var v67 = heap[2];\n" {
+		t.Errorf("Generate = %q; want %q", got, "var v67 = heap[2];\n")
+	}
+	if got := GenerateMinified(p); got != "var v67=heap[2];" {
+		t.Errorf("GenerateMinified = %q; want %q", got, "var v67=heap[2];")
+	}
+}
+
+func TestLeadingBlockCommentOnExpressionStatementNotEmitted(t *testing.T) {
+	src := "/* 7355685938729369933 pc=114796 dk=5 */ heap[2]"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if got := Generate(p); got != "heap[2];\n" {
+		t.Errorf("Generate = %q; want %q", got, "heap[2];\n")
+	}
+	if got := GenerateMinified(p); got != "heap[2];" {
+		t.Errorf("GenerateMinified = %q; want %q", got, "heap[2];")
+	}
+}

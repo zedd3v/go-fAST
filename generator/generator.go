@@ -739,9 +739,6 @@ func (g *GenVisitor) VisitExpressionStatement(n *ast.ExpressionStatement) {
 		g.genExpr(n.Expression, ast.PrecedenceLowest, 0)
 	}
 	g.writeByte(';')
-	if len(n.Comment) > 0 && !g.opts.Minified {
-		g.writeString(" // " + n.Comment)
-	}
 }
 
 func (g *GenVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
@@ -755,9 +752,6 @@ func (g *GenVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
 		}
 	}
 	g.writeByte(';')
-	if len(n.Comment) > 0 && !g.opts.Minified {
-		g.writeString(" // " + n.Comment)
-	}
 }
 
 func (g *GenVisitor) VisitVariableDeclarator(n *ast.VariableDeclarator) {

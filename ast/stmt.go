@@ -99,7 +99,6 @@ type (
 
 	ExpressionStatement struct {
 		Expression *Expression
-		Comment    string
 	}
 
 	IfStatement struct {

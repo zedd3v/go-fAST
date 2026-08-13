@@ -20,7 +20,10 @@ type VisitableNode interface {
 }
 
 type Program struct {
-	Body Statements
+	Body     Statements
+	Comments []Comment
+	// Source aliases the parse input. Comment.Text reads from it.
+	Source string
 }
 
 func (n *Program) Idx0() Idx {

@@ -102,7 +102,7 @@ func (n *EmptyStatement) Clone() *EmptyStatement {
 	return &EmptyStatement{Semicolon: n.Semicolon}
 }
 func (n *ExpressionStatement) Clone() *ExpressionStatement {
-	return &ExpressionStatement{Expression: n.Expression.Clone(), Comment: n.Comment}
+	return &ExpressionStatement{Expression: n.Expression.Clone()}
 }
 func (n *Expressions) Clone() *Expressions {
 	ns := make(Expressions, len(*n))
@@ -240,7 +240,9 @@ func (n *PrivateIdentifier) Clone() *PrivateIdentifier {
 	return &PrivateIdentifier{Identifier: n.Identifier.Clone()}
 }
 func (n *Program) Clone() *Program {
-	return &Program{Body: *n.Body.Clone()}
+	comments := make([]Comment, len(n.Comments))
+	copy(comments, n.Comments)
+	return &Program{Body: *n.Body.Clone(), Comments: comments, Source: n.Source}
 }
 func (n *Properties) Clone() *Properties {
 	ns := make(Properties, len(*n))
@@ -355,7 +357,7 @@ func (n *UpdateExpression) Clone() *UpdateExpression {
 	return &UpdateExpression{Operand: n.Operand.Clone(), Idx: n.Idx, Operator: n.Operator, Postfix: n.Postfix}
 }
 func (n *VariableDeclaration) Clone() *VariableDeclaration {
-	return &VariableDeclaration{List: *n.List.Clone(), Comment: n.Comment, Idx: n.Idx, Kind: n.Kind}
+	return &VariableDeclaration{List: *n.List.Clone(), Idx: n.Idx, Kind: n.Kind}
 }
 func (n *VariableDeclarator) Clone() *VariableDeclarator {
 	var initializer *Expression
