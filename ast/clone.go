@@ -314,7 +314,7 @@ func (n *SwitchCases) Clone() *SwitchCases {
 	return &ns
 }
 func (n *SwitchStatement) Clone() *SwitchStatement {
-	return &SwitchStatement{Discriminant: n.Discriminant.Clone(), Body: *n.Body.Clone(), Default: n.Default, Switch: n.Switch}
+	return &SwitchStatement{Discriminant: n.Discriminant.Clone(), Body: *n.Body.Clone(), Default: n.Default, Switch: n.Switch, RightBrace: n.RightBrace}
 }
 func (n *TemplateElement) Clone() *TemplateElement {
 	return &TemplateElement{Literal: n.Literal, Parsed: n.Parsed, Idx: n.Idx}

@@ -152,8 +152,12 @@ func (g *GenVisitor) writeIndent() {
 
 // propertyStart is the first token of an object property. PropertyMethod.Idx0
 // is the key, so async/get/set/* comments would otherwise fall into the
-// preceding gap and print before the keyword.
-func propertyStart(p ast.Property) ast.Idx {
+// preceding gap and print before the keyword. Spread Idx0 is the inner
+// expression, so the ellipsis start is the next token after prevEnd.
+func propertyStart(src string, prevEnd ast.Idx, p ast.Property) ast.Idx {
+	if p.Kind() == ast.PropSpread {
+		return ast.Idx(nextTokenStart(src, int(prevEnd)))
+	}
 	var kw ast.Idx
 	switch p.Kind() {
 	case ast.PropMethod:
@@ -167,6 +171,39 @@ func propertyStart(p ast.Property) ast.Idx {
 		return kw
 	}
 	return p.Idx0()
+}
+
+// nextTokenStart skips trivia (and one comma) from i and returns the next token.
+func nextTokenStart(src string, i int) int {
+	i = skipWSAndComments(src, i)
+	if i < len(src) && src[i] == ',' {
+		i++
+		i = skipWSAndComments(src, i)
+	}
+	return i
+}
+
+func classHasName(n *ast.ClassLiteral) bool {
+	return n.Name != nil && n.Name.Name != ""
+}
+
+// classHeaderHi is the token after the `class` keyword gap: name, else
+// extends/superclass, else `{`. Anonymous classes store Name as Idx 0.
+func classHeaderHi(src string, n *ast.ClassLiteral) ast.Idx {
+	if classHasName(n) {
+		return n.Name.Idx
+	}
+	if n.SuperClass != nil {
+		return n.SuperClass.Idx0()
+	}
+	if src == "" {
+		return n.RightBrace
+	}
+	i := int(n.Class)
+	if i+5 <= len(src) && src[i:i+5] == "class" {
+		i += 5
+	}
+	return ast.Idx(skipWSAndComments(src, i))
 }
 
 func nextStmtStart(body []ast.Statement, i int, eof ast.Idx) ast.Idx {

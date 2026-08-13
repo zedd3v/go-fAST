@@ -491,3 +491,107 @@ func TestLegalOrphanAtEOF(t *testing.T) {
 		t.Fatalf("legal orphan dropped: %q", got)
 	}
 }
+
+func TestObjectAsyncMethodInnerKeyComment(t *testing.T) {
+	src := "({ /* c */ async /* x */ f() {} })"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "/* c */ async /* x */ f") {
+		t.Fatalf("object method comments misplaced: %q", got)
+	}
+}
+
+func TestSpreadInnerAndLeadingComments(t *testing.T) {
+	p, err := parser.Parse("[... /* c */ x]")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "... /* c */ x") {
+		t.Fatalf("spread inner comment misplaced: %q", got)
+	}
+
+	p, err = parser.Parse("[ /* c */ ...x]")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got = Generate(p)
+	if !strings.Contains(got, "/* c */ ...x") {
+		t.Fatalf("leading comment on ... dropped: %q", got)
+	}
+
+	p, err = parser.Parse("foo( /* c */ ...a)")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got = Generate(p)
+	if !strings.Contains(got, "/* c */ ...a") {
+		t.Fatalf("call leading comment on ... dropped: %q", got)
+	}
+}
+
+func TestLeadingCommentOnIf(t *testing.T) {
+	src := "/* 1 pc=2 dk=3 */ if (x) y"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if p.Body[0].Idx0() == 0 {
+		t.Fatalf("If.Idx0 is 0; keyword index was not set")
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "/* 1 pc=2 dk=3 */") || !strings.Contains(got, "if") {
+		t.Fatalf("leading if comment dropped: %q", got)
+	}
+	if strings.Index(got, "/* 1 pc=2 dk=3 */") > strings.Index(got, "if") {
+		t.Fatalf("leading if comment after if: %q", got)
+	}
+}
+
+func TestSwitchCaseTrailingCommentStaysInCase(t *testing.T) {
+	src := "switch (x) { case 1: foo(); // trail\n}"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if strings.Contains(got, "} // trail") || strings.Contains(got, "}\n// trail") {
+		t.Fatalf("case trailing comment printed after }: %q", got)
+	}
+	if !strings.Contains(got, "// trail") {
+		t.Fatalf("case trailing comment dropped: %q", got)
+	}
+	if i, j := strings.Index(got, "// trail"), strings.Index(got, "}"); i < 0 || j < 0 || i > j {
+		t.Fatalf("case trailing comment not before }: %q", got)
+	}
+}
+
+func TestNewExpressionArgListComment(t *testing.T) {
+	src := "new F(a, // c\nb)"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "// c") {
+		t.Fatalf("new arg comment dropped: %q", got)
+	}
+}
+
+func TestAnonymousClassHeaderComment(t *testing.T) {
+	src := "(class /* x */ { f() {} })"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Generate(p)
+	if !strings.Contains(got, "class /* x */") {
+		t.Fatalf("anonymous class header comment misplaced: %q", got)
+	}
+	if strings.Contains(got, "{ /* x */") {
+		t.Fatalf("anonymous class comment moved into body: %q", got)
+	}
+}
