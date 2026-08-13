@@ -324,7 +324,7 @@ func TestTemplateLiteralMinified(t *testing.T) {
 	assertMinified(t, "({})`x`;", "({})`x`;")
 }
 
-func TestLeadingBlockCommentNotEmitted(t *testing.T) {
+func TestLeadingDumpMetaEmitted(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
 	p, err := parser.Parse(src)
 	if err != nil {
@@ -344,7 +344,7 @@ func TestLeadingBlockCommentNotEmitted(t *testing.T) {
 	}
 }
 
-func TestLeadingBlockCommentOnExpressionStatementNotEmitted(t *testing.T) {
+func TestLeadingDumpMetaOnExpressionStatement(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ heap[2]"
 	p, err := parser.Parse(src)
 	if err != nil {

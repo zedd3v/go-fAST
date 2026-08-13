@@ -9,18 +9,8 @@ import (
 	"github.com/t14raptor/go-fast/parser"
 )
 
-// Peer-derived comment corpus.
-//
-// Sources:
-//   - Oxc TriviaBuilder (leading/trailing, stay-leading, = / ( / :)
-//   - SWC tests/comments (call posts, paren-pure, switch fallthrough, block)
-//   - Babel comments/basic fixtures (surrounding call/return/throw/while,
-//     trailing-comma lists, comment-within-condition, class/object methods)
-//   - esbuild legal / @__PURE__ / #__PURE__ / @__NO_SIDE_EFFECTS__
-//   - V8 CSA dump tags (pc= / dk=)
-//
-// HTML comments (<!-- -->) are out of scope: this scanner has no HTML path.
-// TypeScript / JSX / decorators are out of scope.
+// Comment cases from Oxc, SWC, Babel, esbuild, and V8 dump tags.
+// HTML, TypeScript, and JSX are out of scope.
 
 type commentCorpusCase struct {
 	name     string

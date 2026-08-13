@@ -16,7 +16,7 @@ type Scanner struct {
 
 	errors *error
 
-	trivia TriviaBuilder
+	trivia triviaBuilder
 
 	hasPeek   bool
 	peeked    Token
@@ -62,29 +62,19 @@ type Checkpoint struct {
 	peeked    Token
 	peekedEsc string
 
-	commentsLen          int
-	processed            int
-	sawNewline           bool
-	sawNewlineForComment bool
-	previousKind         token.Token
-	previousStart        ast.Idx
+	trivia triviaSnap
 }
 
 func (s *Scanner) Checkpoint() Checkpoint {
 	return Checkpoint{
-		pos:                  s.src.pos,
-		tok:                  s.Token,
-		escapedStr:           s.EscapedStr,
-		errors:               *s.errors,
-		hasPeek:              s.hasPeek,
-		peeked:               s.peeked,
-		peekedEsc:            s.peekedEsc,
-		commentsLen:          len(s.trivia.comments),
-		processed:            s.trivia.processed,
-		sawNewline:           s.trivia.sawNewline,
-		sawNewlineForComment: s.trivia.sawNewlineForComment,
-		previousKind:         s.trivia.previousKind,
-		previousStart:        s.trivia.previousStart,
+		pos:        s.src.pos,
+		tok:        s.Token,
+		escapedStr: s.EscapedStr,
+		errors:     *s.errors,
+		hasPeek:    s.hasPeek,
+		peeked:     s.peeked,
+		peekedEsc:  s.peekedEsc,
+		trivia:     s.trivia.snapshot(),
 	}
 }
 
@@ -96,12 +86,7 @@ func (s *Scanner) Rewind(c Checkpoint) {
 	s.hasPeek = c.hasPeek
 	s.peeked = c.peeked
 	s.peekedEsc = c.peekedEsc
-	s.trivia.comments = s.trivia.comments[:c.commentsLen]
-	s.trivia.processed = c.processed
-	s.trivia.sawNewline = c.sawNewline
-	s.trivia.sawNewlineForComment = c.sawNewlineForComment
-	s.trivia.previousKind = c.previousKind
-	s.trivia.previousStart = c.previousStart
+	s.trivia.restore(c.trivia)
 }
 
 func (s *Scanner) Next() {
@@ -129,8 +114,8 @@ func (s *Scanner) Peek() Token {
 }
 
 func (s *Scanner) SetCommentBuf(buf []ast.Comment) {
+	s.trivia = newTriviaBuilder()
 	s.trivia.comments = buf[:0]
-	s.trivia.Reset()
 }
 
 func (s *Scanner) TakeCommentBuf() []ast.Comment {

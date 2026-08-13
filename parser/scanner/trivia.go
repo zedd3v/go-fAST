@@ -7,9 +7,9 @@ import (
 	"github.com/t14raptor/go-fast/parser/scanner/token"
 )
 
-// TriviaBuilder records span-only comments and classifies them at lex time.
-// Zero-value TriviaBuilder is not valid: sawNewline must start true.
-type TriviaBuilder struct {
+// triviaBuilder records comments and classifies them at lex time.
+// The zero value is not valid: sawNewline must start true.
+type triviaBuilder struct {
 	comments []ast.Comment
 
 	processed int
@@ -20,32 +20,44 @@ type TriviaBuilder struct {
 	previousStart        ast.Idx
 }
 
-func newTriviaBuilder() TriviaBuilder {
-	return TriviaBuilder{
+func newTriviaBuilder() triviaBuilder {
+	return triviaBuilder{
 		sawNewline:           true,
 		sawNewlineForComment: true,
 		previousKind:         token.Undetermined,
 	}
 }
 
-func (t *TriviaBuilder) Reset() {
-	t.comments = t.comments[:0]
-	t.processed = 0
-	t.sawNewline = true
-	t.sawNewlineForComment = true
-	t.previousKind = token.Undetermined
-	t.previousStart = 0
+type triviaSnap struct {
+	commentsLen          int
+	processed            int
+	sawNewline           bool
+	sawNewlineForComment bool
+	previousKind         token.Token
+	previousStart        ast.Idx
 }
 
-func (t *TriviaBuilder) addLineComment(start, end ast.Idx, src Source) {
-	t.addComment(start, end, ast.CommentLine, src)
+func (t *triviaBuilder) snapshot() triviaSnap {
+	return triviaSnap{
+		commentsLen:          len(t.comments),
+		processed:            t.processed,
+		sawNewline:           t.sawNewline,
+		sawNewlineForComment: t.sawNewlineForComment,
+		previousKind:         t.previousKind,
+		previousStart:        t.previousStart,
+	}
 }
 
-func (t *TriviaBuilder) addBlockComment(start, end ast.Idx, kind ast.CommentKind, src Source) {
-	t.addComment(start, end, kind, src)
+func (t *triviaBuilder) restore(s triviaSnap) {
+	t.comments = t.comments[:s.commentsLen]
+	t.processed = s.processed
+	t.sawNewline = s.sawNewline
+	t.sawNewlineForComment = s.sawNewlineForComment
+	t.previousKind = s.previousKind
+	t.previousStart = s.previousStart
 }
 
-func (t *TriviaBuilder) addComment(start, end ast.Idx, kind ast.CommentKind, src Source) {
+func (t *triviaBuilder) addComment(start, end ast.Idx, kind ast.CommentKind, src Source) {
 	if last := len(t.comments); last > 0 && start <= t.comments[last-1].Start {
 		return
 	}
@@ -79,7 +91,7 @@ func (t *TriviaBuilder) addComment(start, end ast.Idx, kind ast.CommentKind, src
 	t.comments = append(t.comments, c)
 }
 
-func (t *TriviaBuilder) handleNewline() {
+func (t *triviaBuilder) handleNewline() {
 	n := len(t.comments)
 	if t.processed < n {
 		last := &t.comments[n-1]
@@ -93,14 +105,14 @@ func (t *TriviaBuilder) handleNewline() {
 	t.sawNewlineForComment = true
 }
 
-func (t *TriviaBuilder) markPendingTrailing() {
+func (t *triviaBuilder) markPendingTrailing() {
 	for i := t.processed; i < len(t.comments); i++ {
 		t.comments[i].Position = ast.CommentTrailing
 		t.comments[i].AttachedTo = t.previousStart
 	}
 }
 
-func (t *TriviaBuilder) handleToken(kind token.Token, start ast.Idx) {
+func (t *triviaBuilder) handleToken(kind token.Token, start ast.Idx) {
 	t.previousKind = kind
 	t.previousStart = start
 	t.sawNewline = false
@@ -110,8 +122,7 @@ func (t *TriviaBuilder) handleToken(kind token.Token, start ast.Idx) {
 	}
 }
 
-//go:noinline
-func (t *TriviaBuilder) attachPendingLeading(start ast.Idx) {
+func (t *triviaBuilder) attachPendingLeading(start ast.Idx) {
 	for i := t.processed; i < len(t.comments); i++ {
 		t.comments[i].Position = ast.CommentLeading
 		t.comments[i].AttachedTo = start

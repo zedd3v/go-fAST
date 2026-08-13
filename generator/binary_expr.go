@@ -97,9 +97,7 @@ descend:
 		e := g.binaryStack[length-1]
 		g.binaryStack = g.binaryStack[:length-1]
 
-		if g.comments != nil {
-			g.printGap(e.leftEnd, e.right.Idx0())
-		}
+		g.printGap(e.leftEnd, e.right.Idx0())
 
 		if e.op == "in" || e.op == "instanceof" {
 			// Keyword operators (in, instanceof) always need spaces.

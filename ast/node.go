@@ -20,13 +20,9 @@ type VisitableNode interface {
 }
 
 type Program struct {
-	Body Statements
-	// Comments is the file comment table, ordered by Start.
-	// RemoveHelper does not rewrite it. Comments of a deleted node
-	// are orphans: generate drops them, except Legal at EOF.
-	Comments []Comment
-	// Source aliases the parse input. Comment.Text reads from it.
-	Source string
+	Body     Statements
+	Comments []Comment // ordered by Start; generate drops orphans except Legal
+	Source   string    // parse input; Comment.Text reads from it
 }
 
 func (n *Program) Idx0() Idx {

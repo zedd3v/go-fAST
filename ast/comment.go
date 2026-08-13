@@ -3,8 +3,8 @@ package ast
 // Comment is one source comment. Text is Source[Start:End], including delimiters.
 // The zero Position is Trailing.
 type Comment struct {
-	Start, End Idx // Inclusive start, exclusive end.
-	AttachedTo Idx // Token start this comment is attached to.
+	Start, End Idx
+	AttachedTo Idx
 	Kind       CommentKind
 	Position   CommentPosition
 	Newlines   CommentNewlines
@@ -30,7 +30,6 @@ const (
 type CommentNewlines uint8
 
 const (
-	CommentNewlineNone     CommentNewlines = 0
 	CommentNewlinePreceded CommentNewlines = 1 << 0
 	CommentNewlineFollowed CommentNewlines = 1 << 1
 )
@@ -55,9 +54,7 @@ func (c Comment) Text(src string) string {
 	return src[c.Start:c.End]
 }
 
-// Body is the text between delimiters. It does not panic on unterminated /*.
-// Line: drop the leading "//" when present.
-// Block: drop "/*" and, only when the span ends in "*/", drop those two bytes.
+// Body is the text between delimiters. Unterminated /* keeps the rest of the span.
 func (c Comment) Body(src string) string {
 	s := c.Text(src)
 	if len(s) < 2 {
@@ -81,16 +78,9 @@ func (c Comment) Body(src string) string {
 func (c Comment) IsLeading() bool         { return c.Position == CommentLeading }
 func (c Comment) IsTrailing() bool        { return c.Position == CommentTrailing }
 func (c Comment) IsLine() bool            { return c.Kind == CommentLine }
-func (c Comment) IsBlock() bool           { return c.Kind != CommentLine }
 func (c Comment) PrecededByNewline() bool { return c.Newlines&CommentNewlinePreceded != 0 }
 func (c Comment) FollowedByNewline() bool { return c.Newlines&CommentNewlineFollowed != 0 }
 func (c Comment) IsLegal() bool           { return c.Content == ContentLegal || c.Content == ContentJsdocLegal }
-func (c Comment) IsPure() bool            { return c.Content == ContentPure }
-func (c Comment) IsNoSideEffects() bool   { return c.Content == ContentNoSideEffects }
-func (c Comment) IsDumpMeta() bool        { return c.Content == ContentDumpMeta }
-func (c Comment) IsAnnotation() bool {
-	return c.Content == ContentPure || c.Content == ContentNoSideEffects || c.Content == ContentDumpMeta
-}
 func (c Comment) StayLeading() bool {
 	switch c.Content {
 	case ContentLegal, ContentJsdocLegal, ContentPure, ContentNoSideEffects, ContentDumpMeta:
@@ -99,27 +89,7 @@ func (c Comment) StayLeading() bool {
 	return false
 }
 
-func (c *Comment) SetPrecededByNewline(v bool) {
-	if v {
-		c.Newlines |= CommentNewlinePreceded
-	} else {
-		c.Newlines &^= CommentNewlinePreceded
-	}
-}
-
-func (c *Comment) SetFollowedByNewline(v bool) {
-	if v {
-		c.Newlines |= CommentNewlineFollowed
-	} else {
-		c.Newlines &^= CommentNewlineFollowed
-	}
-}
-
-// Move rewrites AttachedTo from → to for every comment.
-// Used when a transform replaces a node and wants its comments.
-// New nodes with span 0 get no comments unless the transform calls Move.
-// Linear scan. The table is ordered by Start, not AttachedTo. N is small
-// (0–10k). O(n) is the API. Do not binary-search Start.
+// Move retargets AttachedTo from → to. Linear in the table.
 func Move(comments []Comment, from, to Idx) {
 	for i := range comments {
 		if comments[i].AttachedTo == from {
@@ -128,26 +98,20 @@ func Move(comments []Comment, from, to Idx) {
 	}
 }
 
-// Leading returns comments with AttachedTo == start && IsLeading().
-// Linear scan. The table is ordered by comment Start, which is *before*
-// AttachedTo for a leading comment, so a binary search on Start for
-// start == tokenStart finds the wrong row (or none). N is small
-// (0–10k). O(n) is the API. Do not binary-search Start.
+// Leading returns comments attached to start that are leading.
 func Leading(comments []Comment, start Idx) []Comment {
-	var out []Comment
-	for i := range comments {
-		if comments[i].AttachedTo == start && comments[i].IsLeading() {
-			out = append(out, comments[i])
-		}
-	}
-	return out
+	return filterAttached(comments, start, CommentLeading)
 }
 
-// Trailing is the same scan with IsTrailing().
+// Trailing returns comments attached to start that are trailing.
 func Trailing(comments []Comment, start Idx) []Comment {
+	return filterAttached(comments, start, CommentTrailing)
+}
+
+func filterAttached(comments []Comment, start Idx, pos CommentPosition) []Comment {
 	var out []Comment
 	for i := range comments {
-		if comments[i].AttachedTo == start && comments[i].IsTrailing() {
+		if comments[i].AttachedTo == start && comments[i].Position == pos {
 			out = append(out, comments[i])
 		}
 	}

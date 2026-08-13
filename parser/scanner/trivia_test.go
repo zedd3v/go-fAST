@@ -24,7 +24,7 @@ func TestNewScannerInitsTrivia(t *testing.T) {
 	var err error
 	s := NewScanner("// lead\nvar x", &err)
 	if !s.trivia.sawNewline || !s.trivia.sawNewlineForComment {
-		t.Fatal("NewScanner must start TriviaBuilder with sawNewline true")
+		t.Fatal("NewScanner must start trivia with sawNewline true")
 	}
 }
 
@@ -348,7 +348,7 @@ func TestTriviaDedupWithoutTruncate(t *testing.T) {
 	s.Next()
 	// Re-insert the same span without rewind truncate.
 	start := ast.Idx(strings.Index(src, "/* c */"))
-	s.trivia.addBlockComment(start, start+ast.Idx(len("/* c */")), ast.CommentSingleLineBlock, s.src)
+	s.trivia.addComment(start, start+ast.Idx(len("/* c */")), ast.CommentSingleLineBlock, s.src)
 	if len(s.trivia.comments) != 1 {
 		t.Fatalf("len=%d; want 1 after dedup", len(s.trivia.comments))
 	}

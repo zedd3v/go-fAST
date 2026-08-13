@@ -10,8 +10,7 @@ func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
 	if g.opts.Minified {
 		kept := make([]ast.Comment, 0, len(cs))
 		for i := range cs {
-			switch cs[i].Content {
-			case ast.ContentLegal, ast.ContentJsdocLegal, ast.ContentPure, ast.ContentNoSideEffects, ast.ContentDumpMeta:
+			if cs[i].StayLeading() {
 				kept = append(kept, cs[i])
 			}
 		}
@@ -25,31 +24,23 @@ func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
 	g.byAttach = make(map[ast.Idx][]int, len(cs))
 	for i := range cs {
 		g.byAttach[cs[i].AttachedTo] = append(g.byAttach[cs[i].AttachedTo], i)
-		if cs[i].IsLegal() {
-			g.legalOrphans = append(g.legalOrphans, i)
-		}
 	}
 }
 
 func (g *GenVisitor) printLeading(start ast.Idx) {
-	if g.comments == nil {
-		return
-	}
-	for _, i := range g.byAttach[start] {
-		if g.printed[i] || !g.comments[i].IsLeading() {
-			continue
-		}
-		g.printed[i] = true
-		g.printComment(g.comments[i])
-	}
+	g.printAttached(start, ast.CommentLeading)
 }
 
 func (g *GenVisitor) printTrailing(start ast.Idx) {
+	g.printAttached(start, ast.CommentTrailing)
+}
+
+func (g *GenVisitor) printAttached(start ast.Idx, pos ast.CommentPosition) {
 	if g.comments == nil {
 		return
 	}
 	for _, i := range g.byAttach[start] {
-		if g.printed[i] || !g.comments[i].IsTrailing() {
+		if g.printed[i] || g.comments[i].Position != pos {
 			continue
 		}
 		g.printed[i] = true
@@ -72,18 +63,18 @@ func (g *GenVisitor) printGap(lo, hi ast.Idx) {
 	}
 }
 
-func (g *GenVisitor) printListGap(prevEnd, nextStart ast.Idx) {
-	g.printGap(prevEnd, nextStart)
-}
-
 func (g *GenVisitor) printLegalOrphans() {
-	for _, i := range g.legalOrphans {
-		if g.printed[i] {
+	for i := range g.comments {
+		if g.printed[i] || !g.comments[i].IsLegal() {
 			continue
 		}
 		g.printed[i] = true
 		g.printComment(g.comments[i])
 	}
+}
+
+func (g *GenVisitor) printAfter(prevEnd ast.Idx) {
+	g.printGap(prevEnd, ast.Idx(nextTokenStart(g.src, int(prevEnd))))
 }
 
 func (g *GenVisitor) printComment(c ast.Comment) {
@@ -103,7 +94,7 @@ func (g *GenVisitor) printComment(c ast.Comment) {
 		g.spaceBeforeComment()
 		g.writeString(c.Text(g.src))
 		g.writeByte('\n')
-		g.writeIndent()
+		g.pad()
 		return
 	}
 
@@ -117,7 +108,7 @@ func (g *GenVisitor) printComment(c ast.Comment) {
 	}
 	if c.FollowedByNewline() {
 		g.writeByte('\n')
-		g.writeIndent()
+		g.pad()
 		return
 	}
 	if c.PrecededByNewline() && atLineStart {
@@ -144,16 +135,13 @@ func (g *GenVisitor) atColumnZero() bool {
 	return n == 0 || g.buf[n-1] == '\n'
 }
 
-func (g *GenVisitor) writeIndent() {
+func (g *GenVisitor) pad() {
 	for range g.indent {
 		g.writeByte('\t')
 	}
 }
 
-// propertyStart is the first token of an object property. PropertyMethod.Idx0
-// is the key, so async/get/set/* comments would otherwise fall into the
-// preceding gap and print before the keyword. Spread Idx0 is the inner
-// expression, so the ellipsis start is the next token after prevEnd.
+// propertyStart is the first token of an object property (keyword or `...`, not the key).
 func propertyStart(src string, prevEnd ast.Idx, p ast.Property) ast.Idx {
 	if p.Kind() == ast.PropSpread {
 		return ast.Idx(nextTokenStart(src, int(prevEnd)))
@@ -173,7 +161,6 @@ func propertyStart(src string, prevEnd ast.Idx, p ast.Property) ast.Idx {
 	return p.Idx0()
 }
 
-// nextTokenStart skips trivia (and one comma) from i and returns the next token.
 func nextTokenStart(src string, i int) int {
 	i = skipWSAndComments(src, i)
 	if i < len(src) && src[i] == ',' {
@@ -187,8 +174,6 @@ func classHasName(n *ast.ClassLiteral) bool {
 	return n.Name != nil && n.Name.Name != ""
 }
 
-// classHeaderHi is the token after the `class` keyword gap: name, else
-// extends/superclass, else `{`. Anonymous classes store Name as Idx 0.
 func classHeaderHi(src string, n *ast.ClassLiteral) ast.Idx {
 	if classHasName(n) {
 		return n.Name.Idx
@@ -213,7 +198,6 @@ func nextStmtStart(body []ast.Statement, i int, eof ast.Idx) ast.Idx {
 	return eof
 }
 
-// asyncFunctionKeywordStart is the `function` token after `async` and trivia.
 func asyncFunctionKeywordStart(src string, start ast.Idx) ast.Idx {
 	i := int(start)
 	if i+5 <= len(src) && src[i:i+5] == "async" {
