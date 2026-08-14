@@ -118,6 +118,7 @@ func (g *GenVisitor) printAfter(prevEnd ast.Idx) {
 }
 
 func (g *GenVisitor) printComment(c ast.Comment) {
+	text := c.Text(g.src)
 	if c.IsLine() {
 		if g.opts.Minified {
 			switch c.Content {
@@ -126,36 +127,36 @@ func (g *GenVisitor) printComment(c ast.Comment) {
 			case ast.ContentNoSideEffects:
 				g.writeString("/* @__NO_SIDE_EFFECTS__ */ ")
 			case ast.ContentLegal, ast.ContentJsdocLegal, ast.ContentDumpMeta:
-				g.writeString(c.Text(g.src))
-				g.writeByte('\n')
+				g.writeString(text)
+				g.buf = append(g.buf, '\n')
 			}
 			return
 		}
 		g.spaceBeforeComment()
-		g.writeString(c.Text(g.src))
-		g.writeByte('\n')
+		g.buf = append(g.buf, text...)
+		g.buf = append(g.buf, '\n')
 		g.pad()
 		return
 	}
 
-	atLineStart := g.atColumnZero()
-	if !g.opts.Minified {
-		g.spaceBeforeComment()
-	}
-	g.writeString(c.Text(g.src))
 	if g.opts.Minified {
+		g.writeString(text)
 		return
 	}
+
+	atLineStart := g.atColumnZero()
+	g.spaceBeforeComment()
+	g.buf = append(g.buf, text...)
 	if c.FollowedByNewline() {
-		g.writeByte('\n')
+		g.buf = append(g.buf, '\n')
 		g.pad()
 		return
 	}
 	if c.PrecededByNewline() && atLineStart {
-		g.writeByte('\n')
+		g.buf = append(g.buf, '\n')
 		return
 	}
-	g.writeByte(' ')
+	g.buf = append(g.buf, ' ')
 }
 
 func (g *GenVisitor) spaceBeforeComment() {
@@ -167,7 +168,7 @@ func (g *GenVisitor) spaceBeforeComment() {
 	case ' ', '\t', '\n':
 		return
 	}
-	g.writeByte(' ')
+	g.buf = append(g.buf, ' ')
 }
 
 func (g *GenVisitor) atColumnZero() bool {
@@ -177,7 +178,7 @@ func (g *GenVisitor) atColumnZero() bool {
 
 func (g *GenVisitor) pad() {
 	for range g.indent {
-		g.writeByte('\t')
+		g.buf = append(g.buf, '\t')
 	}
 }
 
