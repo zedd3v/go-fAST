@@ -69,7 +69,8 @@ type GenVisitor struct {
 	src      string
 	comments []ast.Comment
 	printed  []bool
-	attach   []int // comment indices sorted by AttachedTo, then Start
+	attach   []int              // comment indices sorted by AttachedTo, then Start
+	byAttach map[ast.Idx][2]int // [lo,hi) into attach
 	gapI     int
 }
 

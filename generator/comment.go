@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	attachPool  = sync.Pool{New: func() any { return []int{} }}
-	printedPool = sync.Pool{New: func() any { return []bool{} }}
+	attachPool   = sync.Pool{New: func() any { return []int{} }}
+	printedPool  = sync.Pool{New: func() any { return []bool{} }}
+	byAttachPool = sync.Pool{New: func() any { return make(map[ast.Idx][2]int) }}
 )
 
 func getAttach(n int) []int {
@@ -38,6 +39,11 @@ func (g *GenVisitor) releaseCommentState() {
 	if g.printed != nil {
 		printedPool.Put(g.printed[:0])
 		g.printed = nil
+	}
+	if g.byAttach != nil {
+		clear(g.byAttach)
+		byAttachPool.Put(g.byAttach)
+		g.byAttach = nil
 	}
 }
 
@@ -72,9 +78,20 @@ func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
 		}
 		return a.Start < b.Start
 	})
+	byAttach := byAttachPool.Get().(map[ast.Idx][2]int)
+	for i := 0; i < n; {
+		at := cs[attach[i]].AttachedTo
+		j := i + 1
+		for j < n && cs[attach[j]].AttachedTo == at {
+			j++
+		}
+		byAttach[at] = [2]int{i, j}
+		i = j
+	}
 	g.comments = cs
 	g.printed = printed
 	g.attach = attach
+	g.byAttach = byAttach
 }
 
 func (g *GenVisitor) printLeading(start ast.Idx) {
@@ -93,10 +110,13 @@ func (g *GenVisitor) printTrailing(start ast.Idx) {
 
 //go:noinline
 func (g *GenVisitor) printAttached(start ast.Idx, pos ast.CommentPosition) {
+	r, ok := g.byAttach[start]
+	if !ok {
+		return
+	}
 	cs := g.comments
 	idx := g.attach
-	i := sort.Search(len(idx), func(i int) bool { return cs[idx[i]].AttachedTo >= start })
-	for ; i < len(idx) && cs[idx[i]].AttachedTo == start; i++ {
+	for i := r[0]; i < r[1]; i++ {
 		k := idx[i]
 		if g.printed[k] || cs[k].Position != pos {
 			continue
