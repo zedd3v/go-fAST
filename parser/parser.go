@@ -30,15 +30,15 @@ type parser struct {
 	// slices without per-call heap allocations. Each builder saves
 	// len(buf) as a mark, appends elements, copies the subslice to the
 	// arena, then restores buf to the saved mark.
-	exprBuf      []ast.Expression
-	stmtBuf      []ast.Statement
-	propBuf      []ast.Property
-	elemBuf      []ast.ClassElement
-	declBuf      []ast.VariableDeclarator
-	patBuf       []ast.Pattern
-	patPropBuf   []ast.PatternProperty
-	commentsBuf  []ast.Comment
-	skipComments bool
+	exprBuf         []ast.Expression
+	stmtBuf         []ast.Statement
+	propBuf         []ast.Property
+	elemBuf         []ast.ClassElement
+	declBuf         []ast.VariableDeclarator
+	patBuf          []ast.Pattern
+	patPropBuf      []ast.PatternProperty
+	commentsBuf     []ast.Comment
+	collectComments bool
 }
 
 var parserPool = sync.Pool{
@@ -58,21 +58,17 @@ var parserPool = sync.Pool{
 
 // Options controls parse behavior.
 type Options struct {
-	// SkipComments drops comments at lex time. Program.Comments is empty
-	// and generate has nothing to print. Use this when the caller only
-	// needs the AST.
-	SkipComments bool
+	// Comments records comments on Program. Off by default.
+	Comments bool
 }
 
 func getParser(src string, opts Options) *parser {
 	p := parserPool.Get().(*parser)
 	p.str = src
-	p.skipComments = opts.SkipComments
+	p.collectComments = opts.Comments
 	p.alloc = newNodeAllocator()
 	p.scanner = scanner.NewScanner(src, &p.errors)
-	if opts.SkipComments {
-		p.scanner.CollectComments(false)
-	} else {
+	if opts.Comments {
 		p.scanner.SetCommentBuf(p.commentsBuf, len(src))
 	}
 	return p
@@ -81,10 +77,10 @@ func getParser(src string, opts Options) *parser {
 func putParser(p *parser) {
 	p.str = ""
 	p.alloc = nodeAllocator{}
-	if !p.skipComments {
+	if p.collectComments {
 		p.commentsBuf = p.scanner.TakeCommentBuf()
 	}
-	p.skipComments = false
+	p.collectComments = false
 	p.scanner = scanner.Scanner{}
 	p.scope = nil
 	p.errors = nil
@@ -101,7 +97,7 @@ func putParser(p *parser) {
 }
 
 // Parse parses src as an ECMAScript script and returns the program AST.
-// Comments are collected. Use [ParseWithOptions] to skip them.
+// Comments are not collected. Use [ParseWithOptions] with Comments set.
 // Errors are accumulated; on a non-nil error the returned [*ast.Program]
 // may still be partially populated.
 //

@@ -26,10 +26,9 @@ type Scanner struct {
 
 func NewScanner(src string, errors *error) Scanner {
 	return Scanner{
-		src:     NewSource(src),
-		errors:  errors,
-		trivia:  newTriviaBuilder(),
-		collect: true,
+		src:    NewSource(src),
+		errors: errors,
+		trivia: newTriviaBuilder(),
 	}
 }
 
@@ -115,7 +114,7 @@ func (s *Scanner) Peek() Token {
 	return s.peeked
 }
 
-// CollectComments turns comment recording on or off. NewScanner starts on.
+// CollectComments turns comment recording on or off. NewScanner starts off.
 func (s *Scanner) CollectComments(on bool) {
 	s.collect = on
 }

@@ -28,7 +28,7 @@ func (v *dropFirstStmt) VisitStatement(n *ast.Statement) {
 
 func TestRemoveHelperDropsDumpMetaKeepsLegalOrphan(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ /*! license */ var dead = 1;\nvar keep = 2;"
-	p, err := parser.Parse(src)
+	p, err := parser.ParseWithOptions(src, parser.Options{Comments: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestRemoveHelperDropsDumpMetaKeepsLegalOrphan(t *testing.T) {
 		t.Fatalf("RemoveHelper rewrote comments: %d; want 2", len(p.Comments))
 	}
 
-	got := generator.Generate(p)
+	got := generator.GenerateWithOptions(p, generator.Options{Comments: true})
 	if strings.Contains(got, "7355685938729369933") || strings.Contains(got, "pc=") {
 		t.Fatalf("DumpMeta orphan printed: %q", got)
 	}

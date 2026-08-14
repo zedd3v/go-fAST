@@ -11,6 +11,7 @@ import (
 func collectComments(src string) ([]ast.Comment, error) {
 	var err error
 	s := NewScanner(src, &err)
+	s.CollectComments(true)
 	for {
 		s.Next()
 		if s.Token.Kind == token.Eof {
@@ -20,11 +21,10 @@ func collectComments(src string) ([]ast.Comment, error) {
 	return s.TakeComments(), err
 }
 
-func TestCollectCommentsOff(t *testing.T) {
+func TestCollectCommentsOffByDefault(t *testing.T) {
 	src := "/* a */ var x // b"
 	var err error
 	s := NewScanner(src, &err)
-	s.CollectComments(false)
 	for {
 		s.Next()
 		if s.Token.Kind == token.Eof {
@@ -35,7 +35,7 @@ func TestCollectCommentsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := s.TakeComments(); len(got) != 0 {
-		t.Fatalf("CollectComments(false) recorded %#v", got)
+		t.Fatalf("default scanner recorded %#v", got)
 	}
 }
 
@@ -344,6 +344,7 @@ func TestTriviaRewindNoDup(t *testing.T) {
 	src := "a /* c */ b"
 	var err error
 	s := NewScanner(src, &err)
+	s.CollectComments(true)
 	s.Next() // a
 	cp := s.Checkpoint()
 	s.Next() // b
@@ -363,6 +364,7 @@ func TestTriviaDedupWithoutTruncate(t *testing.T) {
 	src := "a /* c */ b"
 	var err error
 	s := NewScanner(src, &err)
+	s.CollectComments(true)
 	s.Next()
 	s.Next()
 	// Re-insert the same span without rewind truncate.
@@ -377,6 +379,7 @@ func TestTriviaPeekDoesNotRelex(t *testing.T) {
 	src := "a /* c */ b"
 	var err error
 	s := NewScanner(src, &err)
+	s.CollectComments(true)
 	s.Next()
 	cur := s.Token
 	pk := s.Peek()
@@ -435,6 +438,7 @@ func TestTriviaASIBlockComment(t *testing.T) {
 	src := "a /*\n*/ b"
 	var err error
 	s := NewScanner(src, &err)
+	s.CollectComments(true)
 	s.Next()
 	s.Next()
 	if !s.Token.OnNewLine {

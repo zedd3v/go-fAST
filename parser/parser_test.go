@@ -37,6 +37,15 @@ func mustParse(t *testing.T, code string) *ast.Program {
 	return p
 }
 
+func mustParseComments(t *testing.T, code string) *ast.Program {
+	t.Helper()
+	p, err := parser.ParseWithOptions(code, parser.Options{Comments: true})
+	if err != nil {
+		t.Fatalf("Failed to parse:\n%s\nError: %v", code, err)
+	}
+	return p
+}
+
 // roundTrip parses code, regenerates it, and returns the output.
 func roundTrip(t *testing.T, code string) string {
 	t.Helper()
@@ -51,6 +60,15 @@ func assertRoundTrip(t *testing.T, code, want string) {
 	got := roundTrip(t, code)
 	if got != want {
 		t.Errorf("roundTrip(%q)\n  got:  %s\n  want: %s", code, got, want)
+	}
+}
+
+func assertCommentRoundTrip(t *testing.T, code, want string) {
+	t.Helper()
+	p := mustParseComments(t, code)
+	got := strings.TrimSpace(generator.GenerateWithOptions(p, generator.Options{Comments: true}))
+	if got != want {
+		t.Errorf("commentRoundTrip(%q)\n  got:  %s\n  want: %s", code, got, want)
 	}
 }
 
@@ -2174,14 +2192,14 @@ func TestScannerAcceptsNonASCIISources(t *testing.T) {
 // COMMENTS
 // ===========================================================================
 
-func TestSkipComments(t *testing.T) {
+func TestParseSkipsCommentsByDefault(t *testing.T) {
 	src := "/* a */ var x = 1 // b\n/* c */ y"
-	p, err := parser.ParseWithOptions(src, parser.Options{SkipComments: true})
+	p, err := parser.Parse(src)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(p.Comments) != 0 {
-		t.Fatalf("SkipComments kept %d comments", len(p.Comments))
+		t.Fatalf("default Parse kept %d comments", len(p.Comments))
 	}
 	if len(p.Body) != 2 {
 		t.Fatalf("stmt count = %d; want 2", len(p.Body))
@@ -2192,16 +2210,16 @@ func TestSkipComments(t *testing.T) {
 	}
 }
 
-func TestParseCollectsCommentsByDefault(t *testing.T) {
-	p := mustParse(t, "/* a */ var x")
+func TestParseCommentsOptIn(t *testing.T) {
+	p := mustParseComments(t, "/* a */ var x")
 	if len(p.Comments) != 1 || p.Comments[0].Text(p.Source) != "/* a */" {
-		t.Fatalf("default Parse dropped comments: %#v", p.Comments)
+		t.Fatalf("Comments:true dropped comments: %#v", p.Comments)
 	}
 }
 
 func TestLeadingBlockCommentAST(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
-	p := mustParse(t, src)
+	p := mustParseComments(t, src)
 	decl, ok := firstStmt(p, 0).(*ast.VariableDeclaration)
 	if !ok {
 		t.Fatalf("stmt = %T; want *VariableDeclaration", firstStmt(p, 0))
@@ -2223,7 +2241,7 @@ func TestLeadingBlockCommentAST(t *testing.T) {
 
 func TestArrowCommentRewindNoDup(t *testing.T) {
 	src := "async (/* c */ x) => x"
-	p := mustParse(t, src)
+	p := mustParseComments(t, src)
 	if len(p.Comments) != 1 {
 		t.Fatalf("comments = %d; want 1", len(p.Comments))
 	}
@@ -2233,8 +2251,8 @@ func TestArrowCommentRewindNoDup(t *testing.T) {
 }
 
 func TestCommentTableCopiedOutOfPool(t *testing.T) {
-	p1 := mustParse(t, "/* a */ var x")
-	_ = mustParse(t, "/* bbb */ var y")
+	p1 := mustParseComments(t, "/* a */ var x")
+	_ = mustParseComments(t, "/* bbb */ var y")
 	if len(p1.Comments) != 1 || p1.Comments[0].Text(p1.Source) != "/* a */" {
 		t.Fatalf("p1 comments corrupted: %#v", p1.Comments)
 	}
@@ -2259,11 +2277,11 @@ func TestCommentsAreWhitespace(t *testing.T) {
 }
 
 func TestLeadingBlockCommentRoundTrip(t *testing.T) {
-	assertRoundTrip(t,
+	assertCommentRoundTrip(t,
 		"/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]",
 		"/* 7355685938729369933 pc=114796 dk=5 */\nvar v67 = heap[2];",
 	)
-	assertRoundTrip(t,
+	assertCommentRoundTrip(t,
 		"/* 7355685938729369933 pc=114796 dk=5 */ heap[2]",
 		"/* 7355685938729369933 pc=114796 dk=5 */\nheap[2];",
 	)

@@ -4,9 +4,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/t14raptor/go-fast/ast"
 	"github.com/t14raptor/go-fast/parser"
 	"github.com/t14raptor/go-fast/resolver"
 )
+
+func parseComments(t *testing.T, src string) *ast.Program {
+	t.Helper()
+	p, err := parser.ParseWithOptions(src, parser.Options{Comments: true})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return p
+}
+
+func generateComments(p ast.VisitableNode) string {
+	return GenerateWithOptions(p, Options{Comments: true})
+}
+
+func generateCommentsMin(p ast.VisitableNode) string {
+	return GenerateWithOptions(p, Options{Comments: true, Minified: true})
+}
 
 func assertMinified(t *testing.T, input, want string) {
 	t.Helper()
@@ -324,80 +342,61 @@ func TestTemplateLiteralMinified(t *testing.T) {
 	assertMinified(t, "({})`x`;", "({})`x`;")
 }
 
-func TestGenerateSkipComments(t *testing.T) {
-	src := "/* a */ var x = 1 // b"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(p.Comments) == 0 {
-		t.Fatal("parse dropped comments")
-	}
-	got := GenerateWithOptions(p, Options{SkipComments: true})
+func TestGenerateSkipsCommentsByDefault(t *testing.T) {
+	p := parseComments(t, "/* a */ var x = 1 // b")
+	got := Generate(p)
 	if strings.Contains(got, "/* a */") || strings.Contains(got, "// b") {
-		t.Fatalf("SkipComments printed comments: %q", got)
+		t.Fatalf("default Generate printed comments: %q", got)
 	}
 	if !strings.Contains(got, "var x") {
-		t.Fatalf("SkipComments dropped code: %q", got)
+		t.Fatalf("default Generate dropped code: %q", got)
 	}
 }
 
 func TestLeadingDumpMetaEmitted(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	p := parseComments(t, src)
 
 	wantPretty := "/* 7355685938729369933 pc=114796 dk=5 */\nvar v67 = heap[2];\n"
-	if got := Generate(p); got != wantPretty {
+	if got := generateComments(p); got != wantPretty {
 		t.Errorf("Generate = %q; want %q", got, wantPretty)
 	}
 	wantMin := "/* 7355685938729369933 pc=114796 dk=5 */var v67=heap[2];"
-	if got := GenerateMinified(p); got != wantMin {
+	if got := generateCommentsMin(p); got != wantMin {
 		t.Errorf("GenerateMinified = %q; want %q", got, wantMin)
 	}
-	if got := GenerateMinified(p); strings.Contains(got, "//") {
+	if got := generateCommentsMin(p); strings.Contains(got, "//") {
 		t.Errorf("GenerateMinified rewrote dump meta as //: %q", got)
 	}
 }
 
 func TestLeadingDumpMetaOnExpressionStatement(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ heap[2]"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	p := parseComments(t, src)
 
 	wantPretty := "/* 7355685938729369933 pc=114796 dk=5 */\nheap[2];\n"
-	if got := Generate(p); got != wantPretty {
+	if got := generateComments(p); got != wantPretty {
 		t.Errorf("Generate = %q; want %q", got, wantPretty)
 	}
 	wantMin := "/* 7355685938729369933 pc=114796 dk=5 */heap[2];"
-	if got := GenerateMinified(p); got != wantMin {
+	if got := generateCommentsMin(p); got != wantMin {
 		t.Errorf("GenerateMinified = %q; want %q", got, wantMin)
 	}
 }
 
 func TestMidExpressionBlockComment(t *testing.T) {
 	src := "var v67 = /* mid */ heap[2]"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	p := parseComments(t, src)
 	want := "var v67 = /* mid */ heap[2];\n"
-	if got := Generate(p); got != want {
+	if got := generateComments(p); got != want {
 		t.Errorf("Generate = %q; want %q", got, want)
 	}
 }
 
 func TestTrailingLineCommentDoesNotSwallowSemicolon(t *testing.T) {
 	src := "var x = 1 // trail"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, ";") {
 		t.Fatalf("pretty missing semicolon: %q", got)
 	}
@@ -411,11 +410,8 @@ func TestTrailingLineCommentDoesNotSwallowSemicolon(t *testing.T) {
 
 func TestLastStatementTrailingLineComment(t *testing.T) {
 	src := "foo(); // trail"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "// trail") {
 		t.Fatalf("last-statement trailing comment missing: %q", got)
 	}
@@ -425,16 +421,16 @@ func TestLastStatementTrailingLineComment(t *testing.T) {
 }
 
 func TestMinifyDropsNormalLineComment(t *testing.T) {
-	assertMinified(t, "// line\nvar x = 1", "var x=1;")
+	p := parseComments(t, "// line\nvar x = 1")
+	if got := generateCommentsMin(p); got != "var x=1;" {
+		t.Fatalf("minify = %q; want %q", got, "var x=1;")
+	}
 }
 
 func TestMinifyPureCanonical(t *testing.T) {
 	src := "// @__PURE__\nfoo()"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := GenerateMinified(p)
+	p := parseComments(t, src)
+	got := generateCommentsMin(p)
 	want := "/* @__PURE__ */ foo();"
 	if got != want {
 		t.Errorf("GenerateMinified = %q; want %q", got, want)
@@ -446,16 +442,10 @@ func TestMinifyPureCanonical(t *testing.T) {
 
 func TestMinifyPureIdempotent(t *testing.T) {
 	src := "/* @__PURE__ */foo();"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	once := GenerateMinified(p)
-	p2, err := parser.Parse(once)
-	if err != nil {
-		t.Fatalf("reparse: %v", err)
-	}
-	twice := GenerateMinified(p2)
+	p := parseComments(t, src)
+	once := generateCommentsMin(p)
+	p2 := parseComments(t, once)
+	twice := generateCommentsMin(p2)
 	if once != twice {
 		t.Errorf("minify not idempotent: %q then %q", once, twice)
 	}
@@ -463,11 +453,8 @@ func TestMinifyPureIdempotent(t *testing.T) {
 
 func TestAsyncInnerComment(t *testing.T) {
 	src := "async /* x */ function f() {}"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "async /* x */ function") {
 		t.Fatalf("async inner comment misplaced: %q", got)
 	}
@@ -475,11 +462,8 @@ func TestAsyncInnerComment(t *testing.T) {
 
 func TestClassMemberLeadingComment(t *testing.T) {
 	src := "class C { /* c */ static f() {} }"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "/* c */ static") {
 		t.Fatalf("class member comment misplaced: %q", got)
 	}
@@ -487,11 +471,8 @@ func TestClassMemberLeadingComment(t *testing.T) {
 
 func TestObjectAsyncMethodLeadingComment(t *testing.T) {
 	src := "({ /* c */ async f() {} })"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "/* c */ async") {
 		t.Fatalf("object method comment misplaced: %q", got)
 	}
@@ -499,12 +480,9 @@ func TestObjectAsyncMethodLeadingComment(t *testing.T) {
 
 func TestLegalOrphanAtEOF(t *testing.T) {
 	src := "/*! license */ var x = 1"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	p := parseComments(t, src)
 	p.Body = nil
-	got := Generate(p)
+	got := generateComments(p)
 	if !strings.Contains(got, "/*! license */") {
 		t.Fatalf("legal orphan dropped: %q", got)
 	}
@@ -512,40 +490,28 @@ func TestLegalOrphanAtEOF(t *testing.T) {
 
 func TestObjectAsyncMethodInnerKeyComment(t *testing.T) {
 	src := "({ /* c */ async /* x */ f() {} })"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "/* c */ async /* x */ f") {
 		t.Fatalf("object method comments misplaced: %q", got)
 	}
 }
 
 func TestSpreadInnerAndLeadingComments(t *testing.T) {
-	p, err := parser.Parse("[... /* c */ x]")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, "[... /* c */ x]")
+	got := generateComments(p)
 	if !strings.Contains(got, "... /* c */ x") {
 		t.Fatalf("spread inner comment misplaced: %q", got)
 	}
 
-	p, err = parser.Parse("[ /* c */ ...x]")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got = Generate(p)
+	p = parseComments(t, "[ /* c */ ...x]")
+	got = generateComments(p)
 	if !strings.Contains(got, "/* c */ ...x") {
 		t.Fatalf("leading comment on ... dropped: %q", got)
 	}
 
-	p, err = parser.Parse("foo( /* c */ ...a)")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got = Generate(p)
+	p = parseComments(t, "foo( /* c */ ...a)")
+	got = generateComments(p)
 	if !strings.Contains(got, "/* c */ ...a") {
 		t.Fatalf("call leading comment on ... dropped: %q", got)
 	}
@@ -553,14 +519,11 @@ func TestSpreadInnerAndLeadingComments(t *testing.T) {
 
 func TestLeadingCommentOnIf(t *testing.T) {
 	src := "/* 1 pc=2 dk=3 */ if (x) y"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	p := parseComments(t, src)
 	if p.Body[0].Idx0() == 0 {
 		t.Fatalf("If.Idx0 is 0; keyword index was not set")
 	}
-	got := Generate(p)
+	got := generateComments(p)
 	if !strings.Contains(got, "/* 1 pc=2 dk=3 */") || !strings.Contains(got, "if") {
 		t.Fatalf("leading if comment dropped: %q", got)
 	}
@@ -571,11 +534,8 @@ func TestLeadingCommentOnIf(t *testing.T) {
 
 func TestSwitchCaseTrailingCommentStaysInCase(t *testing.T) {
 	src := "switch (x) { case 1: foo(); // trail\n}"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if strings.Contains(got, "} // trail") || strings.Contains(got, "}\n// trail") {
 		t.Fatalf("case trailing comment printed after }: %q", got)
 	}
@@ -589,11 +549,8 @@ func TestSwitchCaseTrailingCommentStaysInCase(t *testing.T) {
 
 func TestNewExpressionArgListComment(t *testing.T) {
 	src := "new F(a, // c\nb)"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "// c") {
 		t.Fatalf("new arg comment dropped: %q", got)
 	}
@@ -601,11 +558,8 @@ func TestNewExpressionArgListComment(t *testing.T) {
 
 func TestAnonymousClassHeaderComment(t *testing.T) {
 	src := "(class /* x */ { f() {} })"
-	p, err := parser.Parse(src)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := Generate(p)
+	p := parseComments(t, src)
+	got := generateComments(p)
 	if !strings.Contains(got, "class /* x */") {
 		t.Fatalf("anonymous class header comment misplaced: %q", got)
 	}

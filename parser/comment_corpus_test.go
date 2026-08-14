@@ -146,7 +146,7 @@ func commentCorpus() []commentCorpusCase {
 func TestCommentCorpusParseAndTexts(t *testing.T) {
 	for _, tc := range commentCorpus() {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := parser.Parse(tc.src)
+			p, err := parser.ParseWithOptions(tc.src, parser.Options{Comments: true})
 			if tc.parseErr {
 				if err == nil {
 					t.Fatalf("parse(%q): want error", tc.src)
@@ -179,11 +179,11 @@ func TestCommentCorpusGenerate(t *testing.T) {
 			continue
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := parser.Parse(tc.src)
+			p, err := parser.ParseWithOptions(tc.src, parser.Options{Comments: true})
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			pretty := generator.Generate(p)
+			pretty := generator.GenerateWithOptions(p, generator.Options{Comments: true})
 			for _, s := range tc.prettyMust {
 				if !strings.Contains(pretty, s) {
 					t.Errorf("pretty missing %q\n got: %q", s, pretty)
@@ -194,7 +194,7 @@ func TestCommentCorpusGenerate(t *testing.T) {
 					t.Errorf("pretty has forbidden %q\n got: %q", s, pretty)
 				}
 			}
-			min := generator.GenerateMinified(p)
+			min := generator.GenerateWithOptions(p, generator.Options{Comments: true, Minified: true})
 			for _, s := range tc.minifyDrops {
 				if strings.Contains(min, s) {
 					t.Errorf("minify kept %q\n got: %q", s, min)
@@ -211,7 +211,7 @@ func TestCommentCorpusGenerate(t *testing.T) {
 
 func TestCommentCorpusProgramSourceAndOrder(t *testing.T) {
 	src := "/* a */ var x; // b\n/* c */ y"
-	p, err := parser.Parse(src)
+	p, err := parser.ParseWithOptions(src, parser.Options{Comments: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestCommentCorpusProgramSourceAndOrder(t *testing.T) {
 func TestHTMLCommentNotRecordedWhenItParsesAsPunct(t *testing.T) {
 	// Without a HTML-comment lexer, `a<!--b` is `<` `!` `--` or an error.
 	// Either way it must not appear as a JS comment.
-	p, err := parser.Parse("var a = 1; <!-- nope")
+	p, err := parser.ParseWithOptions("var a = 1; <!-- nope", parser.Options{Comments: true})
 	if err == nil && p != nil {
 		for _, c := range p.Comments {
 			if strings.Contains(c.Text(p.Source), "<!--") {
@@ -243,7 +243,7 @@ func TestHTMLCommentNotRecordedWhenItParsesAsPunct(t *testing.T) {
 }
 
 func TestCommentKindLineVsBlock(t *testing.T) {
-	p, err := parser.Parse("// L\n/* S */ a /*\nM\n*/ b")
+	p, err := parser.ParseWithOptions("// L\n/* S */ a /*\nM\n*/ b", parser.Options{Comments: true})
 	if err != nil {
 		t.Fatal(err)
 	}

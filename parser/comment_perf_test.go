@@ -12,13 +12,14 @@ func benchLargeFree() string {
 	return strings.Repeat(benchCommentFree, 200)
 }
 
-func benchScan(b *testing.B, src string) {
+func benchScan(b *testing.B, src string, comments bool) {
 	b.Helper()
 	b.ReportAllocs()
 	b.SetBytes(int64(len(src)))
 	for i := 0; i < b.N; i++ {
 		var err error
 		s := scanner.NewScanner(src, &err)
+		s.CollectComments(comments)
 		for {
 			s.Next()
 			if s.Token.Kind == token.Eof {
@@ -42,10 +43,13 @@ func benchParse(b *testing.B, src string) {
 	}
 }
 
-func BenchmarkScanSmallFree(b *testing.B) { benchScan(b, benchCommentFree) }
-func BenchmarkScanLargeFree(b *testing.B) { benchScan(b, benchLargeFree()) }
+func BenchmarkScanSmallFree(b *testing.B) { benchScan(b, benchCommentFree, false) }
+func BenchmarkScanLargeFree(b *testing.B) { benchScan(b, benchLargeFree(), false) }
+func BenchmarkScanLargeFreeComments(b *testing.B) {
+	benchScan(b, benchLargeFree(), true)
+}
 func BenchmarkScan10kComments(b *testing.B) {
-	benchScan(b, bench10kComments)
+	benchScan(b, bench10kComments, true)
 }
 
 func benchParseOpts(b *testing.B, src string, opts Options) {
@@ -61,35 +65,13 @@ func benchParseOpts(b *testing.B, src string, opts Options) {
 
 func BenchmarkParseSmallFree(b *testing.B) { benchParse(b, benchCommentFree) }
 func BenchmarkParseLargeFree(b *testing.B) { benchParse(b, benchLargeFree()) }
-func BenchmarkParseLargeFreeSkip(b *testing.B) {
-	benchParseOpts(b, benchLargeFree(), Options{SkipComments: true})
+func BenchmarkParseLargeFreeComments(b *testing.B) {
+	benchParseOpts(b, benchLargeFree(), Options{Comments: true})
 }
-func BenchmarkParse10kDump(b *testing.B) { benchParse(b, bench10kComments) }
-func BenchmarkParse10kDumpSkip(b *testing.B) {
-	benchParseOpts(b, bench10kComments, Options{SkipComments: true})
+func BenchmarkParse10kDump(b *testing.B) {
+	benchParseOpts(b, bench10kComments, Options{Comments: true})
 }
-
-func BenchmarkScanLargeFreeSkip(b *testing.B) {
-	src := benchLargeFree()
-	b.ReportAllocs()
-	b.SetBytes(int64(len(src)))
-	for i := 0; i < b.N; i++ {
-		var err error
-		s := scanner.NewScanner(src, &err)
-		s.CollectComments(false)
-		for {
-			s.Next()
-			if s.Token.Kind == token.Eof {
-				break
-			}
-		}
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkParseNormalComments(b *testing.B) {
 	src := strings.Repeat("/* mid */ var x = 1; // trail\n", 2000)
-	benchParse(b, src)
+	benchParseOpts(b, src, Options{Comments: true})
 }

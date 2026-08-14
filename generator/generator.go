@@ -13,8 +13,8 @@ type Options struct {
 	// Minified disables pretty printing. Normal // comments are dropped;
 	// legal / @__PURE__ / dump tags stay as /* */.
 	Minified bool
-	// SkipComments does not print Program.Comments.
-	SkipComments bool
+	// Comments prints Program.Comments. Off by default.
+	Comments bool
 }
 
 // Generate renders node as JavaScript source using the default (pretty) options.
@@ -32,7 +32,7 @@ func GenerateMinified(node ast.VisitableNode) string {
 func GenerateWithOptions(node ast.VisitableNode, opts Options) string {
 	g := &GenVisitor{opts: opts}
 	g.V = g
-	if !opts.SkipComments {
+	if opts.Comments {
 		if p, ok := node.(*ast.Program); ok && len(p.Comments) > 0 {
 			g.src = p.Source
 			g.buildCommentState(p.Comments)
