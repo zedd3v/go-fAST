@@ -2174,6 +2174,31 @@ func TestScannerAcceptsNonASCIISources(t *testing.T) {
 // COMMENTS
 // ===========================================================================
 
+func TestSkipComments(t *testing.T) {
+	src := "/* a */ var x = 1 // b\n/* c */ y"
+	p, err := parser.ParseWithOptions(src, parser.Options{SkipComments: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Comments) != 0 {
+		t.Fatalf("SkipComments kept %d comments", len(p.Comments))
+	}
+	if len(p.Body) != 2 {
+		t.Fatalf("stmt count = %d; want 2", len(p.Body))
+	}
+	got := generator.Generate(p)
+	if strings.Contains(got, "/* a */") || strings.Contains(got, "// b") || strings.Contains(got, "/* c */") {
+		t.Fatalf("generate printed skipped comments: %q", got)
+	}
+}
+
+func TestParseCollectsCommentsByDefault(t *testing.T) {
+	p := mustParse(t, "/* a */ var x")
+	if len(p.Comments) != 1 || p.Comments[0].Text(p.Source) != "/* a */" {
+		t.Fatalf("default Parse dropped comments: %#v", p.Comments)
+	}
+}
+
 func TestLeadingBlockCommentAST(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
 	p := mustParse(t, src)

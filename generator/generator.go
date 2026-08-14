@@ -13,6 +13,8 @@ type Options struct {
 	// Minified disables pretty printing. Normal // comments are dropped;
 	// legal / @__PURE__ / dump tags stay as /* */.
 	Minified bool
+	// SkipComments does not print Program.Comments.
+	SkipComments bool
 }
 
 // Generate renders node as JavaScript source using the default (pretty) options.
@@ -30,9 +32,11 @@ func GenerateMinified(node ast.VisitableNode) string {
 func GenerateWithOptions(node ast.VisitableNode, opts Options) string {
 	g := &GenVisitor{opts: opts}
 	g.V = g
-	if p, ok := node.(*ast.Program); ok && len(p.Comments) > 0 {
-		g.src = p.Source
-		g.buildCommentState(p.Comments)
+	if !opts.SkipComments {
+		if p, ok := node.(*ast.Program); ok && len(p.Comments) > 0 {
+			g.src = p.Source
+			g.buildCommentState(p.Comments)
+		}
 	}
 	g.gen(node)
 	g.printLegalOrphans()
@@ -57,7 +61,8 @@ type GenVisitor struct {
 	src      string
 	comments []ast.Comment
 	printed  []bool
-	byAttach map[ast.Idx][]int
+	attach   []int              // comment indices sorted by AttachedTo, then Start
+	byAttach map[ast.Idx][2]int // [lo,hi) into attach
 }
 
 // mergeable reports whether emitting next immediately after prev would form a
@@ -96,12 +101,16 @@ func (g *GenVisitor) writeString(s string) {
 }
 
 func (g *GenVisitor) gen(node ast.VisitableNode) {
-	if n, ok := node.(ast.Node); ok {
-		g.printLeading(n.Idx0())
+	if g.comments != nil {
+		if n, ok := node.(ast.Node); ok {
+			g.printLeading(n.Idx0())
+		}
 	}
 	node.VisitWith(g)
-	if n, ok := node.(ast.Node); ok {
-		g.printTrailing(n.Idx0())
+	if g.comments != nil {
+		if n, ok := node.(ast.Node); ok {
+			g.printTrailing(n.Idx0())
+		}
 	}
 }
 
@@ -111,7 +120,7 @@ func (g *GenVisitor) gen(node ast.VisitableNode) {
 func (g *GenVisitor) genExpr(expr *ast.Expression, prec ast.Precedence, ctx context) {
 	// Spread Idx0 is the inner expression. Print those comments after `...`.
 	isSpread := expr.Kind() == ast.ExprSpread
-	if !isSpread {
+	if g.comments != nil && !isSpread {
 		g.printLeading(expr.Idx0())
 	}
 	savedPrec, savedCtx := g.prec, g.ctx
@@ -123,7 +132,7 @@ func (g *GenVisitor) genExpr(expr *ast.Expression, prec ast.Precedence, ctx cont
 		expr.VisitChildrenWith(g)
 	}
 	g.prec, g.ctx = savedPrec, savedCtx
-	if !isSpread {
+	if g.comments != nil && !isSpread {
 		g.printTrailing(expr.Idx0())
 	}
 }
@@ -447,7 +456,9 @@ func (g *GenVisitor) VisitArrowFunctionLiteral(n *ast.ArrowFunctionLiteral) {
 func (g *GenVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	if n.Async {
 		g.writeString("async ")
-		g.printGap(n.Function, asyncFunctionKeywordStart(g.src, n.Function))
+		if g.comments != nil {
+			g.printGap(n.Function, asyncFunctionKeywordStart(g.src, n.Function))
+		}
 	}
 	g.writeString("function")
 	if n.Generator {
@@ -464,7 +475,9 @@ func (g *GenVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 
 func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 	g.writeString("class")
-	g.printGap(n.Class, classHeaderHi(g.src, n))
+	if g.comments != nil {
+		g.printGap(n.Class, classHeaderHi(g.src, n))
+	}
 	if classHasName(n) {
 		g.writeByte(' ')
 		g.gen(n.Name)
@@ -658,7 +671,9 @@ func (g *GenVisitor) VisitObjectLiteral(n *ast.ObjectLiteral) {
 	prevEnd := n.LeftBrace + 1
 	for i := range n.Value {
 		g.lineAndPad()
-		g.printGap(prevEnd, propertyStart(g.src, prevEnd, n.Value[i]))
+		if g.comments != nil {
+			g.printGap(prevEnd, propertyStart(g.src, prevEnd, n.Value[i]))
+		}
 		// VisitWith, not gen(): gen() would print the key comments before async/get/set/*.
 		n.Value[i].VisitWith(g)
 		if i < len(n.Value)-1 {

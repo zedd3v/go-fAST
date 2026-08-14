@@ -79,11 +79,16 @@ func (s *Scanner) skipSingleLineComment() {
 
 func (s *Scanner) recordLineComment(start ast.Idx) {
 	s.skipSingleLineComment()
-	s.trivia.addComment(start, s.src.Offset(), ast.CommentLine, s.src)
+	if s.collect {
+		s.trivia.addComment(start, s.src.Offset(), ast.CommentLine, s.src)
+	}
 }
 
 func (s *Scanner) recordBlockComment(start ast.Idx) {
 	onNL := s.skipMultiLineComment()
+	if !s.collect {
+		return
+	}
 	kind := ast.CommentSingleLineBlock
 	if onNL {
 		kind = ast.CommentMultiLineBlock

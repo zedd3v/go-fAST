@@ -16,7 +16,8 @@ type Scanner struct {
 
 	errors *error
 
-	trivia triviaBuilder
+	trivia  triviaBuilder
+	collect bool
 
 	hasPeek   bool
 	peeked    Token
@@ -25,9 +26,10 @@ type Scanner struct {
 
 func NewScanner(src string, errors *error) Scanner {
 	return Scanner{
-		src:    NewSource(src),
-		errors: errors,
-		trivia: newTriviaBuilder(),
+		src:     NewSource(src),
+		errors:  errors,
+		trivia:  newTriviaBuilder(),
+		collect: true,
 	}
 }
 
@@ -113,15 +115,24 @@ func (s *Scanner) Peek() Token {
 	return s.peeked
 }
 
-func (s *Scanner) SetCommentBuf(buf []ast.Comment) {
+// CollectComments turns comment recording on or off. NewScanner starts on.
+func (s *Scanner) CollectComments(on bool) {
+	s.collect = on
+}
+
+func (s *Scanner) SetCommentBuf(buf []ast.Comment, srcLen int) {
+	s.collect = true
 	s.trivia = newTriviaBuilder()
-	s.trivia.comments = buf[:0]
+	s.trivia.comments = sizedCommentBuf(buf, srcLen)
 }
 
 func (s *Scanner) TakeCommentBuf() []ast.Comment {
-	buf := s.trivia.comments[:0]
+	buf := s.trivia.comments
 	s.trivia.comments = nil
-	return buf
+	if buf == nil {
+		return make([]ast.Comment, 0, commentBufMin)
+	}
+	return buf[:0]
 }
 
 func (s *Scanner) TakeComments() []ast.Comment {
@@ -129,8 +140,8 @@ func (s *Scanner) TakeComments() []ast.Comment {
 	if n == 0 {
 		return nil
 	}
-	out := make([]ast.Comment, n)
-	copy(out, s.trivia.comments)
+	out := s.trivia.comments
+	s.trivia.comments = nil
 	return out
 }
 

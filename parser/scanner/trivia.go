@@ -20,12 +20,31 @@ type triviaBuilder struct {
 	previousStart        ast.Idx
 }
 
+const (
+	commentBufMin = 256
+	commentBufMax = 65536
+)
+
 func newTriviaBuilder() triviaBuilder {
 	return triviaBuilder{
 		sawNewline:           true,
 		sawNewlineForComment: true,
 		previousKind:         token.Undetermined,
 	}
+}
+
+func sizedCommentBuf(buf []ast.Comment, srcLen int) []ast.Comment {
+	want := srcLen / 32
+	if want < commentBufMin {
+		want = commentBufMin
+	}
+	if want > commentBufMax {
+		want = commentBufMax
+	}
+	if cap(buf) >= want {
+		return buf[:0]
+	}
+	return make([]ast.Comment, 0, want)
 }
 
 type triviaSnap struct {
@@ -88,6 +107,9 @@ func (t *triviaBuilder) addComment(start, end ast.Idx, kind ast.CommentKind, src
 		t.sawNewlineForComment = false
 	}
 
+	if t.comments == nil {
+		t.comments = make([]ast.Comment, 0, commentBufMin)
+	}
 	t.comments = append(t.comments, c)
 }
 
@@ -105,6 +127,7 @@ func (t *triviaBuilder) handleNewline() {
 	t.sawNewlineForComment = true
 }
 
+//go:noinline
 func (t *triviaBuilder) markPendingTrailing() {
 	for i := t.processed; i < len(t.comments); i++ {
 		t.comments[i].Position = ast.CommentTrailing
@@ -122,6 +145,7 @@ func (t *triviaBuilder) handleToken(kind token.Token, start ast.Idx) {
 	}
 }
 
+//go:noinline
 func (t *triviaBuilder) attachPendingLeading(start ast.Idx) {
 	for i := t.processed; i < len(t.comments); i++ {
 		t.comments[i].Position = ast.CommentLeading
@@ -200,7 +224,20 @@ func allStars(s string) bool {
 }
 
 func containsLicenseOrPreserve(s string) bool {
-	return strings.Contains(s, "@license") || strings.Contains(s, "@preserve")
+	if len(s) < len("@license") {
+		return false
+	}
+	for i := 0; i < len(s); {
+		j := strings.IndexByte(s[i:], '@')
+		if j < 0 {
+			return false
+		}
+		i += j + 1
+		if strings.HasPrefix(s[i:], "license") || strings.HasPrefix(s[i:], "preserve") {
+			return true
+		}
+	}
+	return false
 }
 
 func isDumpMeta(s string) bool {

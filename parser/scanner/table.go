@@ -540,7 +540,9 @@ func (s *Scanner) scan() {
 			case isLineTerminator(c):
 				s.ConsumeRune()
 				s.Token.OnNewLine = true
-				s.trivia.handleNewline()
+				if s.collect {
+					s.trivia.handleNewline()
+				}
 				continue
 			case unicode.IsSpace(c):
 				s.ConsumeRune()
@@ -569,5 +571,7 @@ func (s *Scanner) scan() {
 		break
 	}
 	s.Token.Idx1 = s.src.pos
-	s.trivia.handleToken(s.Token.Kind, s.Token.Idx0)
+	if s.collect {
+		s.trivia.handleToken(s.Token.Kind, s.Token.Idx0)
+	}
 }

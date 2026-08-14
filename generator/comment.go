@@ -21,30 +21,58 @@ func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
 	}
 	g.comments = cs
 	g.printed = make([]bool, len(cs))
-	g.byAttach = make(map[ast.Idx][]int, len(cs))
+	g.attach = make([]int, len(cs))
 	for i := range cs {
-		g.byAttach[cs[i].AttachedTo] = append(g.byAttach[cs[i].AttachedTo], i)
+		g.attach[i] = i
+	}
+	sort.Slice(g.attach, func(i, j int) bool {
+		a, b := &cs[g.attach[i]], &cs[g.attach[j]]
+		if a.AttachedTo != b.AttachedTo {
+			return a.AttachedTo < b.AttachedTo
+		}
+		return a.Start < b.Start
+	})
+	g.byAttach = make(map[ast.Idx][2]int, len(cs))
+	for i := 0; i < len(g.attach); {
+		at := cs[g.attach[i]].AttachedTo
+		j := i + 1
+		for j < len(g.attach) && cs[g.attach[j]].AttachedTo == at {
+			j++
+		}
+		g.byAttach[at] = [2]int{i, j}
+		i = j
 	}
 }
 
 func (g *GenVisitor) printLeading(start ast.Idx) {
+	if g.comments == nil {
+		return
+	}
 	g.printAttached(start, ast.CommentLeading)
 }
 
 func (g *GenVisitor) printTrailing(start ast.Idx) {
-	g.printAttached(start, ast.CommentTrailing)
-}
-
-func (g *GenVisitor) printAttached(start ast.Idx, pos ast.CommentPosition) {
 	if g.comments == nil {
 		return
 	}
-	for _, i := range g.byAttach[start] {
-		if g.printed[i] || g.comments[i].Position != pos {
+	g.printAttached(start, ast.CommentTrailing)
+}
+
+//go:noinline
+func (g *GenVisitor) printAttached(start ast.Idx, pos ast.CommentPosition) {
+	r, ok := g.byAttach[start]
+	if !ok {
+		return
+	}
+	cs := g.comments
+	idx := g.attach
+	for i := r[0]; i < r[1]; i++ {
+		k := idx[i]
+		if g.printed[k] || cs[k].Position != pos {
 			continue
 		}
-		g.printed[i] = true
-		g.printComment(g.comments[i])
+		g.printed[k] = true
+		g.printComment(cs[k])
 	}
 }
 
@@ -52,6 +80,11 @@ func (g *GenVisitor) printGap(lo, hi ast.Idx) {
 	if g.comments == nil || lo >= hi {
 		return
 	}
+	g.printGapBody(lo, hi)
+}
+
+//go:noinline
+func (g *GenVisitor) printGapBody(lo, hi ast.Idx) {
 	cs := g.comments
 	i := sort.Search(len(cs), func(i int) bool { return cs[i].Start >= lo })
 	for ; i < len(cs) && cs[i].Start < hi; i++ {
@@ -74,6 +107,9 @@ func (g *GenVisitor) printLegalOrphans() {
 }
 
 func (g *GenVisitor) printAfter(prevEnd ast.Idx) {
+	if g.comments == nil {
+		return
+	}
 	g.printGap(prevEnd, ast.Idx(nextTokenStart(g.src, int(prevEnd))))
 }
 

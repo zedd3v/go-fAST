@@ -324,6 +324,24 @@ func TestTemplateLiteralMinified(t *testing.T) {
 	assertMinified(t, "({})`x`;", "({})`x`;")
 }
 
+func TestGenerateSkipComments(t *testing.T) {
+	src := "/* a */ var x = 1 // b"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Comments) == 0 {
+		t.Fatal("parse dropped comments")
+	}
+	got := GenerateWithOptions(p, Options{SkipComments: true})
+	if strings.Contains(got, "/* a */") || strings.Contains(got, "// b") {
+		t.Fatalf("SkipComments printed comments: %q", got)
+	}
+	if !strings.Contains(got, "var x") {
+		t.Fatalf("SkipComments dropped code: %q", got)
+	}
+}
+
 func TestLeadingDumpMetaEmitted(t *testing.T) {
 	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
 	p, err := parser.Parse(src)

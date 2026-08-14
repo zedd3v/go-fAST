@@ -30,14 +30,15 @@ type parser struct {
 	// slices without per-call heap allocations. Each builder saves
 	// len(buf) as a mark, appends elements, copies the subslice to the
 	// arena, then restores buf to the saved mark.
-	exprBuf     []ast.Expression
-	stmtBuf     []ast.Statement
-	propBuf     []ast.Property
-	elemBuf     []ast.ClassElement
-	declBuf     []ast.VariableDeclarator
-	patBuf      []ast.Pattern
-	patPropBuf  []ast.PatternProperty
-	commentsBuf []ast.Comment
+	exprBuf      []ast.Expression
+	stmtBuf      []ast.Statement
+	propBuf      []ast.Property
+	elemBuf      []ast.ClassElement
+	declBuf      []ast.VariableDeclarator
+	patBuf       []ast.Pattern
+	patPropBuf   []ast.PatternProperty
+	commentsBuf  []ast.Comment
+	skipComments bool
 }
 
 var parserPool = sync.Pool{
@@ -50,24 +51,40 @@ var parserPool = sync.Pool{
 			declBuf:     make([]ast.VariableDeclarator, 0, 16),
 			patBuf:      make([]ast.Pattern, 0, 16),
 			patPropBuf:  make([]ast.PatternProperty, 0, 16),
-			commentsBuf: make([]ast.Comment, 0, 16),
+			commentsBuf: make([]ast.Comment, 0, 256),
 		}
 	},
 }
 
-func getParser(src string) *parser {
+// Options controls parse behavior.
+type Options struct {
+	// SkipComments drops comments at lex time. Program.Comments is empty
+	// and generate has nothing to print. Use this when the caller only
+	// needs the AST.
+	SkipComments bool
+}
+
+func getParser(src string, opts Options) *parser {
 	p := parserPool.Get().(*parser)
 	p.str = src
+	p.skipComments = opts.SkipComments
 	p.alloc = newNodeAllocator()
 	p.scanner = scanner.NewScanner(src, &p.errors)
-	p.scanner.SetCommentBuf(p.commentsBuf)
+	if opts.SkipComments {
+		p.scanner.CollectComments(false)
+	} else {
+		p.scanner.SetCommentBuf(p.commentsBuf, len(src))
+	}
 	return p
 }
 
 func putParser(p *parser) {
 	p.str = ""
 	p.alloc = nodeAllocator{}
-	p.commentsBuf = p.scanner.TakeCommentBuf()
+	if !p.skipComments {
+		p.commentsBuf = p.scanner.TakeCommentBuf()
+	}
+	p.skipComments = false
 	p.scanner = scanner.Scanner{}
 	p.scope = nil
 	p.errors = nil
@@ -84,13 +101,19 @@ func putParser(p *parser) {
 }
 
 // Parse parses src as an ECMAScript script and returns the program AST.
+// Comments are collected. Use [ParseWithOptions] to skip them.
 // Errors are accumulated; on a non-nil error the returned [*ast.Program]
 // may still be partially populated.
 //
 // To recover byte positions from errors use [errors.As] against
 // [*Error] or [scanner.Error], or the shared [ast.Positioned] interface.
 func Parse(src string) (*ast.Program, error) {
-	p := getParser(src)
+	return ParseWithOptions(src, Options{})
+}
+
+// ParseWithOptions parses src using opts.
+func ParseWithOptions(src string, opts Options) (*ast.Program, error) {
+	p := getParser(src, opts)
 	program, err := p.parse()
 	putParser(p)
 	return program, err
@@ -102,6 +125,11 @@ func Parse(src string) (*ast.Program, error) {
 // names.
 func ParseBytes(src []byte) (*ast.Program, error) {
 	return Parse(unsafe.String(unsafe.SliceData(src), len(src)))
+}
+
+// ParseBytesWithOptions is [ParseWithOptions] for a byte slice.
+func ParseBytesWithOptions(src []byte, opts Options) (*ast.Program, error) {
+	return ParseWithOptions(unsafe.String(unsafe.SliceData(src), len(src)), opts)
 }
 
 // parse ...

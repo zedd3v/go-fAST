@@ -20,6 +20,25 @@ func collectComments(src string) ([]ast.Comment, error) {
 	return s.TakeComments(), err
 }
 
+func TestCollectCommentsOff(t *testing.T) {
+	src := "/* a */ var x // b"
+	var err error
+	s := NewScanner(src, &err)
+	s.CollectComments(false)
+	for {
+		s.Next()
+		if s.Token.Kind == token.Eof {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.TakeComments(); len(got) != 0 {
+		t.Fatalf("CollectComments(false) recorded %#v", got)
+	}
+}
+
 func TestNewScannerInitsTrivia(t *testing.T) {
 	var err error
 	s := NewScanner("// lead\nvar x", &err)
