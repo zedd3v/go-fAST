@@ -63,6 +63,7 @@ type GenVisitor struct {
 	printed  []bool
 	attach   []int              // comment indices sorted by AttachedTo, then Start
 	byAttach map[ast.Idx][2]int // [lo,hi) into attach
+	gapI     int
 }
 
 // mergeable reports whether emitting next immediately after prev would form a
@@ -101,16 +102,16 @@ func (g *GenVisitor) writeString(s string) {
 }
 
 func (g *GenVisitor) gen(node ast.VisitableNode) {
-	if g.comments != nil {
-		if n, ok := node.(ast.Node); ok {
-			g.printLeading(n.Idx0())
-		}
+	if g.comments == nil {
+		node.VisitWith(g)
+		return
+	}
+	if n, ok := node.(ast.Node); ok {
+		g.printLeading(n.Idx0())
 	}
 	node.VisitWith(g)
-	if g.comments != nil {
-		if n, ok := node.(ast.Node); ok {
-			g.printTrailing(n.Idx0())
-		}
+	if n, ok := node.(ast.Node); ok {
+		g.printTrailing(n.Idx0())
 	}
 }
 
@@ -119,9 +120,12 @@ func (g *GenVisitor) gen(node ast.VisitableNode) {
 // and calls genExpr on children with the appropriate child precedence.
 func (g *GenVisitor) genExpr(expr *ast.Expression, prec ast.Precedence, ctx context) {
 	// Spread Idx0 is the inner expression. Print those comments after `...`.
-	isSpread := expr.Kind() == ast.ExprSpread
-	if g.comments != nil && !isSpread {
-		g.printLeading(expr.Idx0())
+	spread := false
+	if g.comments != nil {
+		spread = expr.Kind() == ast.ExprSpread
+		if !spread {
+			g.printLeading(expr.Idx0())
+		}
 	}
 	savedPrec, savedCtx := g.prec, g.ctx
 	g.prec, g.ctx = prec, ctx
@@ -132,7 +136,7 @@ func (g *GenVisitor) genExpr(expr *ast.Expression, prec ast.Precedence, ctx cont
 		expr.VisitChildrenWith(g)
 	}
 	g.prec, g.ctx = savedPrec, savedCtx
-	if g.comments != nil && !isSpread {
+	if g.comments != nil && !spread {
 		g.printTrailing(expr.Idx0())
 	}
 }
@@ -456,8 +460,8 @@ func (g *GenVisitor) VisitArrowFunctionLiteral(n *ast.ArrowFunctionLiteral) {
 func (g *GenVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	if n.Async {
 		g.writeString("async ")
-		if g.comments != nil {
-			g.printGap(n.Function, asyncFunctionKeywordStart(g.src, n.Function))
+		if g.comments != nil && n.FunctionKw != 0 {
+			g.printGap(n.Function, n.FunctionKw)
 		}
 	}
 	g.writeString("function")
@@ -476,7 +480,7 @@ func (g *GenVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 	g.writeString("class")
 	if g.comments != nil {
-		g.printGap(n.Class, classHeaderHi(g.src, n))
+		g.printGap(n.Class, classHeaderHi(n))
 	}
 	if classHasName(n) {
 		g.writeByte(' ')

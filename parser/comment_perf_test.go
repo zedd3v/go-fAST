@@ -19,7 +19,9 @@ func benchScan(b *testing.B, src string, comments bool) {
 	for i := 0; i < b.N; i++ {
 		var err error
 		s := scanner.NewScanner(src, &err)
-		s.CollectComments(comments)
+		if comments {
+			s.SetCommentBuf(nil, len(src))
+		}
 		for {
 			s.Next()
 			if s.Token.Kind == token.Eof {

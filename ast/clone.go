@@ -74,7 +74,7 @@ func (n *ClassLiteral) Clone() *ClassLiteral {
 	if n.SuperClass != nil {
 		superclass = n.SuperClass.Clone()
 	}
-	return &ClassLiteral{Name: name, SuperClass: superclass, Body: *n.Body.Clone(), Class: n.Class, RightBrace: n.RightBrace}
+	return &ClassLiteral{Name: name, SuperClass: superclass, Body: *n.Body.Clone(), Class: n.Class, LeftBrace: n.LeftBrace, RightBrace: n.RightBrace}
 }
 func (n *ClassStaticBlock) Clone() *ClassStaticBlock {
 	return &ClassStaticBlock{Block: n.Block.Clone(), Static: n.Static}
@@ -147,7 +147,7 @@ func (n *FunctionLiteral) Clone() *FunctionLiteral {
 	if n.Name != nil {
 		name = n.Name.Clone()
 	}
-	return &FunctionLiteral{Name: name, ParameterList: n.ParameterList.Clone(), Body: n.Body.Clone(), ScopeContext: n.ScopeContext, Function: n.Function, Async: n.Async, Generator: n.Generator}
+	return &FunctionLiteral{Name: name, ParameterList: n.ParameterList.Clone(), Body: n.Body.Clone(), ScopeContext: n.ScopeContext, Function: n.Function, FunctionKw: n.FunctionKw, Async: n.Async, Generator: n.Generator}
 }
 func (n *Identifier) Clone() *Identifier {
 	return &Identifier{Name: n.Name, ScopeContext: n.ScopeContext, Idx: n.Idx}

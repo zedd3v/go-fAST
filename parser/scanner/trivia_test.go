@@ -42,8 +42,12 @@ func TestCollectCommentsOffByDefault(t *testing.T) {
 func TestNewScannerInitsTrivia(t *testing.T) {
 	var err error
 	s := NewScanner("// lead\nvar x", &err)
-	if !s.trivia.sawNewline || !s.trivia.sawNewlineForComment {
-		t.Fatal("NewScanner must start trivia with sawNewline true")
+	if s.trivia != nil {
+		t.Fatal("NewScanner must not allocate trivia")
+	}
+	s.CollectComments(true)
+	if s.trivia == nil || !s.trivia.sawNewline || !s.trivia.sawNewlineForComment {
+		t.Fatal("CollectComments must start trivia with sawNewline true")
 	}
 }
 

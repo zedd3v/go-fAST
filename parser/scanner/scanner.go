@@ -16,8 +16,7 @@ type Scanner struct {
 
 	errors *error
 
-	trivia  triviaBuilder
-	collect bool
+	trivia *triviaBuilder
 
 	hasPeek   bool
 	peeked    Token
@@ -28,7 +27,6 @@ func NewScanner(src string, errors *error) Scanner {
 	return Scanner{
 		src:    NewSource(src),
 		errors: errors,
-		trivia: newTriviaBuilder(),
 	}
 }
 
@@ -67,7 +65,7 @@ type Checkpoint struct {
 }
 
 func (s *Scanner) Checkpoint() Checkpoint {
-	return Checkpoint{
+	cp := Checkpoint{
 		pos:        s.src.pos,
 		tok:        s.Token,
 		escapedStr: s.EscapedStr,
@@ -75,8 +73,11 @@ func (s *Scanner) Checkpoint() Checkpoint {
 		hasPeek:    s.hasPeek,
 		peeked:     s.peeked,
 		peekedEsc:  s.peekedEsc,
-		trivia:     s.trivia.snapshot(),
 	}
+	if s.trivia != nil {
+		cp.trivia = s.trivia.snapshot()
+	}
+	return cp
 }
 
 func (s *Scanner) Rewind(c Checkpoint) {
@@ -87,7 +88,9 @@ func (s *Scanner) Rewind(c Checkpoint) {
 	s.hasPeek = c.hasPeek
 	s.peeked = c.peeked
 	s.peekedEsc = c.peekedEsc
-	s.trivia.restore(c.trivia)
+	if s.trivia != nil {
+		s.trivia.restore(c.trivia)
+	}
 }
 
 func (s *Scanner) Next() {
@@ -116,16 +119,27 @@ func (s *Scanner) Peek() Token {
 
 // CollectComments turns comment recording on or off. NewScanner starts off.
 func (s *Scanner) CollectComments(on bool) {
-	s.collect = on
+	if !on {
+		s.trivia = nil
+		return
+	}
+	if s.trivia == nil {
+		t := newTriviaBuilder()
+		t.comments = make([]ast.Comment, 0, commentBufMin)
+		s.trivia = &t
+	}
 }
 
 func (s *Scanner) SetCommentBuf(buf []ast.Comment, srcLen int) {
-	s.collect = true
-	s.trivia = newTriviaBuilder()
-	s.trivia.comments = sizedCommentBuf(buf, srcLen)
+	t := newTriviaBuilder()
+	t.comments = sizedCommentBuf(buf, srcLen)
+	s.trivia = &t
 }
 
 func (s *Scanner) TakeCommentBuf() []ast.Comment {
+	if s.trivia == nil {
+		return make([]ast.Comment, 0, commentBufMin)
+	}
 	buf := s.trivia.comments
 	s.trivia.comments = nil
 	if buf == nil {
@@ -135,6 +149,9 @@ func (s *Scanner) TakeCommentBuf() []ast.Comment {
 }
 
 func (s *Scanner) TakeComments() []ast.Comment {
+	if s.trivia == nil {
+		return nil
+	}
 	n := len(s.trivia.comments)
 	if n == 0 {
 		return nil

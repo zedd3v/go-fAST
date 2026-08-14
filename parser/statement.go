@@ -188,7 +188,7 @@ func (p *parser) parseMaybeAsyncFunction(declaration bool) *ast.FunctionLiteral 
 
 func (p *parser) parseFunction(declaration, async bool, start ast.Idx) *ast.FunctionLiteral {
 	node := p.alloc.FunctionLiteral(start, async)
-	p.expect(token.Function)
+	node.FunctionKw = p.expect(token.Function)
 
 	if p.currentKind() == token.Multiply {
 		node.Generator = true
@@ -287,7 +287,7 @@ func (p *parser) parseClass(declaration bool) *ast.ClassLiteral {
 		node.SuperClass = p.alloc.Expression(p.parseLeftHandSideExpressionAllowCall())
 	}
 
-	p.expect(token.LeftBrace)
+	node.LeftBrace = p.expect(token.LeftBrace)
 
 	elemMark := len(p.elemBuf)
 	for p.currentKind() != token.RightBrace && p.currentKind() != token.Eof {

@@ -86,7 +86,10 @@ func (g *GenVisitor) printGap(lo, hi ast.Idx) {
 //go:noinline
 func (g *GenVisitor) printGapBody(lo, hi ast.Idx) {
 	cs := g.comments
-	i := sort.Search(len(cs), func(i int) bool { return cs[i].Start >= lo })
+	i := g.gapI
+	if i >= len(cs) || cs[i].Start < lo || i > 0 && cs[i-1].Start >= lo {
+		i = sort.Search(len(cs), func(i int) bool { return cs[i].Start >= lo })
+	}
 	for ; i < len(cs) && cs[i].Start < hi; i++ {
 		if g.printed[i] {
 			continue
@@ -94,6 +97,7 @@ func (g *GenVisitor) printGapBody(lo, hi ast.Idx) {
 		g.printed[i] = true
 		g.printComment(cs[i])
 	}
+	g.gapI = i
 }
 
 func (g *GenVisitor) printLegalOrphans() {
@@ -210,21 +214,17 @@ func classHasName(n *ast.ClassLiteral) bool {
 	return n.Name != nil && n.Name.Name != ""
 }
 
-func classHeaderHi(src string, n *ast.ClassLiteral) ast.Idx {
+func classHeaderHi(n *ast.ClassLiteral) ast.Idx {
 	if classHasName(n) {
 		return n.Name.Idx
 	}
 	if n.SuperClass != nil {
 		return n.SuperClass.Idx0()
 	}
-	if src == "" {
-		return n.RightBrace
+	if n.LeftBrace != 0 {
+		return n.LeftBrace
 	}
-	i := int(n.Class)
-	if i+5 <= len(src) && src[i:i+5] == "class" {
-		i += 5
-	}
-	return ast.Idx(skipWSAndComments(src, i))
+	return n.RightBrace
 }
 
 func nextStmtStart(body []ast.Statement, i int, eof ast.Idx) ast.Idx {
@@ -232,14 +232,6 @@ func nextStmtStart(body []ast.Statement, i int, eof ast.Idx) ast.Idx {
 		return body[i+1].Idx0()
 	}
 	return eof
-}
-
-func asyncFunctionKeywordStart(src string, start ast.Idx) ast.Idx {
-	i := int(start)
-	if i+5 <= len(src) && src[i:i+5] == "async" {
-		i += 5
-	}
-	return ast.Idx(skipWSAndComments(src, i))
 }
 
 func skipWSAndComments(src string, i int) int {

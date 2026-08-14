@@ -20,6 +20,7 @@ type (
 		Body       ClassElements
 
 		Class      Idx
+		LeftBrace  Idx
 		RightBrace Idx
 	}
 

@@ -540,7 +540,7 @@ func (s *Scanner) scan() {
 			case isLineTerminator(c):
 				s.ConsumeRune()
 				s.Token.OnNewLine = true
-				if s.collect {
+				if s.trivia != nil {
 					s.trivia.handleNewline()
 				}
 				continue
@@ -571,7 +571,7 @@ func (s *Scanner) scan() {
 		break
 	}
 	s.Token.Idx1 = s.src.pos
-	if s.collect {
+	if s.trivia != nil {
 		s.trivia.handleToken(s.Token.Kind, s.Token.Idx0)
 	}
 }
