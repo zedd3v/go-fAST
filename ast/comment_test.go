@@ -42,25 +42,26 @@ func TestLeadingTrailingFilterByAttachedTo(t *testing.T) {
 		{Start: 60, End: 64, AttachedTo: 10, Position: CommentLeading},
 	}
 
-	lead := Leading(cs, 10)
+	var buf [8]Comment
+	lead := Leading(cs, 10, buf[:0])
 	if len(lead) != 2 || lead[0].Start != 0 || lead[1].Start != 60 {
 		t.Fatalf("Leading(10) = %#v; want Start 0 then 60", lead)
 	}
-	trail := Trailing(cs, 10)
+	trail := Trailing(cs, 10, buf[:0])
 	if len(trail) != 1 || trail[0].Start != 20 {
 		t.Fatalf("Trailing(10) = %#v; want Start 20", trail)
 	}
-	if got := Leading(cs, 40); len(got) != 1 || got[0].Start != 30 {
+	if got := Leading(cs, 40, buf[:0]); len(got) != 1 || got[0].Start != 30 {
 		t.Fatalf("Leading(40) = %#v; want Start 30", got)
 	}
-	if got := Trailing(cs, 40); len(got) != 1 || got[0].Start != 50 {
+	if got := Trailing(cs, 40, buf[:0]); len(got) != 1 || got[0].Start != 50 {
 		t.Fatalf("Trailing(40) = %#v; want Start 50", got)
 	}
-	if got := Leading(cs, 99); got != nil {
-		t.Fatalf("Leading(99) = %#v; want nil", got)
+	if got := Leading(cs, 99, buf[:0]); len(got) != 0 {
+		t.Fatalf("Leading(99) = %#v; want empty", got)
 	}
-	if got := Trailing(cs, 99); got != nil {
-		t.Fatalf("Trailing(99) = %#v; want nil", got)
+	if got := Trailing(cs, 99, buf[:0]); len(got) != 0 {
+		t.Fatalf("Trailing(99) = %#v; want empty", got)
 	}
 }
 
@@ -79,14 +80,15 @@ func TestMoveRetargetsAttachedTo(t *testing.T) {
 	if cs[2].AttachedTo != 40 {
 		t.Fatalf("Move retargeted unrelated comment: %#v", cs[2])
 	}
-	if got := Leading(cs, 80); len(got) != 1 || got[0].Start != 0 {
+	var buf [8]Comment
+	if got := Leading(cs, 80, buf[:0]); len(got) != 1 || got[0].Start != 0 {
 		t.Fatalf("Leading after Move = %#v; want Start 0", got)
 	}
-	if got := Trailing(cs, 80); len(got) != 1 || got[0].Start != 20 {
+	if got := Trailing(cs, 80, buf[:0]); len(got) != 1 || got[0].Start != 20 {
 		t.Fatalf("Trailing after Move = %#v; want Start 20", got)
 	}
-	if got := Leading(cs, 10); got != nil {
-		t.Fatalf("Leading(old) after Move = %#v; want nil", got)
+	if got := Leading(cs, 10, buf[:0]); len(got) != 0 {
+		t.Fatalf("Leading(old) after Move = %#v; want empty", got)
 	}
 }
 

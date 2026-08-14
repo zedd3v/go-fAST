@@ -98,22 +98,21 @@ func Move(comments []Comment, from, to Idx) {
 	}
 }
 
-// Leading returns comments attached to start that are leading.
-func Leading(comments []Comment, start Idx) []Comment {
-	return filterAttached(comments, start, CommentLeading)
+// Leading appends comments attached to start that are leading onto dst.
+func Leading(comments []Comment, start Idx, dst []Comment) []Comment {
+	return filterAttached(comments, start, CommentLeading, dst)
 }
 
-// Trailing returns comments attached to start that are trailing.
-func Trailing(comments []Comment, start Idx) []Comment {
-	return filterAttached(comments, start, CommentTrailing)
+// Trailing appends comments attached to start that are trailing onto dst.
+func Trailing(comments []Comment, start Idx, dst []Comment) []Comment {
+	return filterAttached(comments, start, CommentTrailing, dst)
 }
 
-func filterAttached(comments []Comment, start Idx, pos CommentPosition) []Comment {
-	var out []Comment
+func filterAttached(comments []Comment, start Idx, pos CommentPosition, dst []Comment) []Comment {
 	for i := range comments {
 		if comments[i].AttachedTo == start && comments[i].Position == pos {
-			out = append(out, comments[i])
+			dst = append(dst, comments[i])
 		}
 	}
-	return out
+	return dst
 }

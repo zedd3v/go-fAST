@@ -2,10 +2,16 @@ package scanner
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/t14raptor/go-fast/ast"
 	"github.com/t14raptor/go-fast/parser/scanner/token"
 )
+
+var triviaPool = sync.Pool{New: func() any {
+	t := newTriviaBuilder()
+	return &t
+}}
 
 type Scanner struct {
 	Token Token
@@ -117,33 +123,54 @@ func (s *Scanner) Peek() Token {
 	return s.peeked
 }
 
+func getTrivia() *triviaBuilder {
+	t := triviaPool.Get().(*triviaBuilder)
+	t.Reset()
+	return t
+}
+
+func (s *Scanner) putTrivia() {
+	t := s.trivia
+	if t == nil {
+		return
+	}
+	s.trivia = nil
+	t.comments = t.comments[:0]
+	triviaPool.Put(t)
+}
+
 // CollectComments turns comment recording on or off. NewScanner starts off.
 func (s *Scanner) CollectComments(on bool) {
 	if !on {
-		s.trivia = nil
+		s.putTrivia()
 		return
 	}
 	if s.trivia == nil {
-		t := newTriviaBuilder()
-		t.comments = make([]ast.Comment, 0, commentBufMin)
-		s.trivia = &t
+		s.trivia = getTrivia()
+		if cap(s.trivia.comments) < commentBufMin {
+			s.trivia.comments = make([]ast.Comment, 0, commentBufMin)
+		}
 	}
 }
 
 func (s *Scanner) SetCommentBuf(buf []ast.Comment, srcLen int) {
-	t := newTriviaBuilder()
-	t.comments = sizedCommentBuf(buf, srcLen)
-	s.trivia = &t
+	if s.trivia == nil {
+		s.trivia = getTrivia()
+	} else {
+		s.trivia.Reset()
+	}
+	s.trivia.comments = sizedCommentBuf(buf, srcLen)
 }
 
 func (s *Scanner) TakeCommentBuf() []ast.Comment {
 	if s.trivia == nil {
-		return make([]ast.Comment, 0, commentBufMin)
+		return nil
 	}
 	buf := s.trivia.comments
 	s.trivia.comments = nil
+	s.putTrivia()
 	if buf == nil {
-		return make([]ast.Comment, 0, commentBufMin)
+		return nil
 	}
 	return buf[:0]
 }

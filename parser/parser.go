@@ -44,14 +44,13 @@ type parser struct {
 var parserPool = sync.Pool{
 	New: func() any {
 		return &parser{
-			exprBuf:     make([]ast.Expression, 0, 64),
-			stmtBuf:     make([]ast.Statement, 0, 64),
-			propBuf:     make([]ast.Property, 0, 16),
-			elemBuf:     make([]ast.ClassElement, 0, 16),
-			declBuf:     make([]ast.VariableDeclarator, 0, 16),
-			patBuf:      make([]ast.Pattern, 0, 16),
-			patPropBuf:  make([]ast.PatternProperty, 0, 16),
-			commentsBuf: make([]ast.Comment, 0, 256),
+			exprBuf:    make([]ast.Expression, 0, 64),
+			stmtBuf:    make([]ast.Statement, 0, 64),
+			propBuf:    make([]ast.Property, 0, 16),
+			elemBuf:    make([]ast.ClassElement, 0, 16),
+			declBuf:    make([]ast.VariableDeclarator, 0, 16),
+			patBuf:     make([]ast.Pattern, 0, 16),
+			patPropBuf: make([]ast.PatternProperty, 0, 16),
 		}
 	},
 }

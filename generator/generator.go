@@ -36,10 +36,18 @@ func GenerateWithOptions(node ast.VisitableNode, opts Options) string {
 		if p, ok := node.(*ast.Program); ok && len(p.Comments) > 0 {
 			g.src = p.Source
 			g.buildCommentState(p.Comments)
+			if g.comments != nil {
+				hint := len(p.Source) + len(p.Comments)*8
+				if hint < 256 {
+					hint = 256
+				}
+				g.buf = make([]byte, 0, hint)
+			}
 		}
 	}
 	g.gen(node)
 	g.printLegalOrphans()
+	g.releaseCommentState()
 	return unsafe.String(unsafe.SliceData(g.buf), len(g.buf))
 }
 
@@ -61,8 +69,7 @@ type GenVisitor struct {
 	src      string
 	comments []ast.Comment
 	printed  []bool
-	attach   []int              // comment indices sorted by AttachedTo, then Start
-	byAttach map[ast.Idx][2]int // [lo,hi) into attach
+	attach   []int // comment indices sorted by AttachedTo, then Start
 	gapI     int
 }
 

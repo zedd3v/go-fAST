@@ -33,6 +33,15 @@ func newTriviaBuilder() triviaBuilder {
 	}
 }
 
+func (t *triviaBuilder) Reset() {
+	t.comments = t.comments[:0]
+	t.processed = 0
+	t.sawNewline = true
+	t.sawNewlineForComment = true
+	t.previousKind = token.Undetermined
+	t.previousStart = 0
+}
+
 func sizedCommentBuf(buf []ast.Comment, srcLen int) []ast.Comment {
 	want := srcLen / 32
 	if want < commentBufMin {

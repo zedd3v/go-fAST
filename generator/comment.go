@@ -2,46 +2,79 @@ package generator
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/t14raptor/go-fast/ast"
 )
 
-func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
-	if g.opts.Minified {
-		kept := make([]ast.Comment, 0, len(cs))
-		for i := range cs {
-			if cs[i].StayLeading() {
-				kept = append(kept, cs[i])
-			}
-		}
-		cs = kept
+var (
+	attachPool  = sync.Pool{New: func() any { return []int{} }}
+	printedPool = sync.Pool{New: func() any { return []bool{} }}
+)
+
+func getAttach(n int) []int {
+	s, _ := attachPool.Get().([]int)
+	if cap(s) < n {
+		return make([]int, n)
 	}
-	if len(cs) == 0 {
+	return s[:n]
+}
+
+func getPrinted(n int) []bool {
+	s, _ := printedPool.Get().([]bool)
+	if cap(s) < n {
+		return make([]bool, n)
+	}
+	s = s[:n]
+	clear(s)
+	return s
+}
+
+func (g *GenVisitor) releaseCommentState() {
+	if g.attach != nil {
+		attachPool.Put(g.attach[:0])
+		g.attach = nil
+	}
+	if g.printed != nil {
+		printedPool.Put(g.printed[:0])
+		g.printed = nil
+	}
+}
+
+func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
+	n := len(cs)
+	if n == 0 {
 		return
 	}
-	g.comments = cs
-	g.printed = make([]bool, len(cs))
-	g.attach = make([]int, len(cs))
-	for i := range cs {
-		g.attach[i] = i
+	printed := getPrinted(n)
+	if g.opts.Minified {
+		keep := false
+		for i := range cs {
+			if cs[i].StayLeading() {
+				keep = true
+			} else {
+				printed[i] = true
+			}
+		}
+		if !keep {
+			printedPool.Put(printed[:0])
+			return
+		}
 	}
-	sort.Slice(g.attach, func(i, j int) bool {
-		a, b := &cs[g.attach[i]], &cs[g.attach[j]]
+	attach := getAttach(n)
+	for i := range cs {
+		attach[i] = i
+	}
+	sort.Slice(attach, func(i, j int) bool {
+		a, b := &cs[attach[i]], &cs[attach[j]]
 		if a.AttachedTo != b.AttachedTo {
 			return a.AttachedTo < b.AttachedTo
 		}
 		return a.Start < b.Start
 	})
-	g.byAttach = make(map[ast.Idx][2]int, len(cs))
-	for i := 0; i < len(g.attach); {
-		at := cs[g.attach[i]].AttachedTo
-		j := i + 1
-		for j < len(g.attach) && cs[g.attach[j]].AttachedTo == at {
-			j++
-		}
-		g.byAttach[at] = [2]int{i, j}
-		i = j
-	}
+	g.comments = cs
+	g.printed = printed
+	g.attach = attach
 }
 
 func (g *GenVisitor) printLeading(start ast.Idx) {
@@ -60,13 +93,10 @@ func (g *GenVisitor) printTrailing(start ast.Idx) {
 
 //go:noinline
 func (g *GenVisitor) printAttached(start ast.Idx, pos ast.CommentPosition) {
-	r, ok := g.byAttach[start]
-	if !ok {
-		return
-	}
 	cs := g.comments
 	idx := g.attach
-	for i := r[0]; i < r[1]; i++ {
+	i := sort.Search(len(idx), func(i int) bool { return cs[idx[i]].AttachedTo >= start })
+	for ; i < len(idx) && cs[idx[i]].AttachedTo == start; i++ {
 		k := idx[i]
 		if g.printed[k] || cs[k].Position != pos {
 			continue
