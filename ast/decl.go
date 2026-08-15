@@ -10,8 +10,7 @@ type (
 	}
 
 	VariableDeclaration struct {
-		List    VariableDeclarators
-		Comment string
+		List VariableDeclarators
 
 		Idx  Idx
 		Kind VarKind

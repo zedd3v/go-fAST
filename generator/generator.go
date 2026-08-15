@@ -10,9 +10,11 @@ import (
 
 // Options controls code generation behavior.
 type Options struct {
-	// Minified disables pretty printing: no newlines, no indentation, and
-	// line (`//`) comments are omitted to keep the output on a single line.
+	// Minified disables pretty printing. Normal // comments are dropped;
+	// legal / @__PURE__ / dump tags stay as /* */.
 	Minified bool
+	// Comments prints Program.Comments. Off by default.
+	Comments bool
 }
 
 // Generate renders node as JavaScript source using the default (pretty) options.
@@ -30,7 +32,22 @@ func GenerateMinified(node ast.VisitableNode) string {
 func GenerateWithOptions(node ast.VisitableNode, opts Options) string {
 	g := &GenVisitor{opts: opts}
 	g.V = g
+	if opts.Comments {
+		if p, ok := node.(*ast.Program); ok && len(p.Comments) > 0 {
+			g.src = p.Source
+			g.buildCommentState(p.Comments)
+			if g.comments != nil {
+				hint := len(p.Source) + len(p.Comments)*8
+				if hint < 256 {
+					hint = 256
+				}
+				g.buf = make([]byte, 0, hint)
+			}
+		}
+	}
 	g.gen(node)
+	g.printLegalOrphans()
+	g.releaseCommentState()
 	return unsafe.String(unsafe.SliceData(g.buf), len(g.buf))
 }
 
@@ -48,6 +65,13 @@ type GenVisitor struct {
 	ctx  context
 
 	binaryStack []binaryExprEntry
+
+	src      string
+	comments []ast.Comment
+	printed  []bool
+	attach   []int              // comment indices sorted by AttachedTo, then Start
+	byAttach map[ast.Idx][2]int // [lo,hi) into attach
+	gapI     int
 }
 
 // mergeable reports whether emitting next immediately after prev would form a
@@ -86,13 +110,31 @@ func (g *GenVisitor) writeString(s string) {
 }
 
 func (g *GenVisitor) gen(node ast.VisitableNode) {
+	if g.comments == nil {
+		node.VisitWith(g)
+		return
+	}
+	if n, ok := node.(ast.Node); ok {
+		g.printLeading(n.Idx0())
+	}
 	node.VisitWith(g)
+	if n, ok := node.(ast.Node); ok {
+		g.printTrailing(n.Idx0())
+	}
 }
 
 // genExpr sets the minimum precedence and context, then visits expr. Each
 // expression visitor reads g.prec/g.ctx to decide whether to wrap in parens,
 // and calls genExpr on children with the appropriate child precedence.
 func (g *GenVisitor) genExpr(expr *ast.Expression, prec ast.Precedence, ctx context) {
+	// Spread Idx0 is the inner expression. Print those comments after `...`.
+	spread := false
+	if g.comments != nil {
+		spread = expr.Kind() == ast.ExprSpread
+		if !spread {
+			g.printLeading(expr.Idx0())
+		}
+	}
 	savedPrec, savedCtx := g.prec, g.ctx
 	g.prec, g.ctx = prec, ctx
 	switch expr.Kind() {
@@ -102,6 +144,9 @@ func (g *GenVisitor) genExpr(expr *ast.Expression, prec ast.Precedence, ctx cont
 		expr.VisitChildrenWith(g)
 	}
 	g.prec, g.ctx = savedPrec, savedCtx
+	if g.comments != nil && !spread {
+		g.printTrailing(expr.Idx0())
+	}
 }
 
 func (g *GenVisitor) line() {
@@ -116,9 +161,7 @@ func (g *GenVisitor) lineAndPad() {
 		return
 	}
 	g.writeByte('\n')
-	for range g.indent {
-		g.writeByte('\t')
-	}
+	g.pad()
 }
 
 func (g *GenVisitor) space() {
@@ -140,6 +183,7 @@ func (g *GenVisitor) VisitAssignExpression(n *ast.AssignExpression) {
 	g.space()
 	g.writeString(n.Operator.String())
 	g.space()
+	g.printGap(n.Left.Idx1(), n.Right.Idx0())
 	g.genExpr(n.Right, ast.PrecedenceAssign, ctx&ctxForbidIn)
 
 	if wrap {
@@ -159,10 +203,12 @@ func (g *GenVisitor) VisitConditionalExpression(n *ast.ConditionalExpression) {
 	g.space()
 	g.writeByte('?')
 	g.space()
+	g.printGap(n.Test.Idx1(), n.Consequent.Idx0())
 	g.genExpr(n.Consequent, ast.PrecedenceAssign, 0)
 	g.space()
 	g.writeByte(':')
 	g.space()
+	g.printGap(n.Consequent.Idx1(), n.Alternate.Idx0())
 	g.genExpr(n.Alternate, ast.PrecedenceAssign, ctx&ctxForbidIn)
 
 	if wrap {
@@ -180,6 +226,7 @@ func (g *GenVisitor) VisitUnaryExpression(n *ast.UnaryExpression) {
 	if n.Operator.IsKeyword() {
 		g.writeByte(' ')
 	}
+	g.printGap(n.Idx, n.Operand.Idx0())
 	g.genExpr(n.Operand, ast.PrecedencePrefix, 0)
 
 	if wrap {
@@ -207,6 +254,7 @@ func (g *GenVisitor) VisitUpdateExpression(n *ast.UpdateExpression) {
 		}
 
 		g.writeString(n.Operator.String())
+		g.printGap(n.Idx, n.Operand.Idx0())
 		g.genExpr(n.Operand, ast.PrecedencePrefix, 0)
 
 		if wrap {
@@ -228,6 +276,7 @@ func (g *GenVisitor) VisitSequenceExpression(n *ast.SequenceExpression) {
 		if i < len(n.Sequence)-1 {
 			g.writeByte(',')
 			g.space()
+			g.printGap(n.Sequence[i].Idx1(), n.Sequence[i+1].Idx0())
 		}
 	}
 
@@ -243,6 +292,11 @@ func (g *GenVisitor) VisitYieldExpression(n *ast.YieldExpression) {
 	}
 
 	g.writeString("yield")
+	hi := n.Yield + 5
+	if n.Argument != nil {
+		hi = n.Argument.Idx0()
+	}
+	g.printGap(n.Yield, hi)
 	if n.Delegate {
 		g.writeByte('*')
 	}
@@ -263,6 +317,7 @@ func (g *GenVisitor) VisitAwaitExpression(n *ast.AwaitExpression) {
 	}
 
 	g.writeString("await ")
+	g.printGap(n.Await, n.Argument.Idx0())
 	g.genExpr(n.Argument, ast.PrecedencePrefix, 0)
 
 	if wrap {
@@ -287,11 +342,14 @@ func (g *GenVisitor) VisitCallExpression(n *ast.CallExpression) {
 		g.writeString("?.")
 	}
 	g.writeByte('(')
+	prevEnd := n.LeftParenthesis + 1
 	for i := range n.ArgumentList {
+		g.printAfter(prevEnd)
 		g.genExpr(&n.ArgumentList[i], ast.PrecedenceAssign, 0)
 		if i < len(n.ArgumentList)-1 {
 			g.writeByte(',')
 			g.space()
+			prevEnd = n.ArgumentList[i].Idx1()
 		}
 	}
 	g.writeByte(')')
@@ -303,13 +361,17 @@ func (g *GenVisitor) VisitCallExpression(n *ast.CallExpression) {
 
 func (g *GenVisitor) VisitNewExpression(n *ast.NewExpression) {
 	g.writeString("new ")
+	g.printGap(n.New, n.Callee.Idx0())
 	g.genExpr(n.Callee, ast.PrecedenceNew, ctxForbidCall)
 	g.writeByte('(')
+	prevEnd := n.LeftParenthesis + 1
 	for i := range n.ArgumentList {
+		g.printAfter(prevEnd)
 		g.genExpr(&n.ArgumentList[i], ast.PrecedenceAssign, 0)
 		if i < len(n.ArgumentList)-1 {
 			g.writeByte(',')
 			g.space()
+			prevEnd = n.ArgumentList[i].Idx1()
 		}
 	}
 	g.writeByte(')')
@@ -318,7 +380,7 @@ func (g *GenVisitor) VisitNewExpression(n *ast.NewExpression) {
 func (g *GenVisitor) VisitMemberExpression(n *ast.MemberExpression) {
 	object, optional := optionalBase(n.Object)
 	g.genAccessHead(object, ast.PrecedenceMember, true)
-	g.genMemberProperty(n.Property, optional)
+	g.genMemberProperty(n.Property, optional, n.Object.Idx1())
 }
 
 func (g *GenVisitor) VisitPrivateDotExpression(n *ast.PrivateDotExpression) {
@@ -378,6 +440,7 @@ func (g *GenVisitor) VisitArrowFunctionLiteral(n *ast.ArrowFunctionLiteral) {
 
 	if n.Async {
 		g.writeString("async ")
+		g.printGap(n.Start, n.ParameterList.Opening)
 	}
 	g.gen(n.ParameterList)
 	g.space()
@@ -405,6 +468,9 @@ func (g *GenVisitor) VisitArrowFunctionLiteral(n *ast.ArrowFunctionLiteral) {
 func (g *GenVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	if n.Async {
 		g.writeString("async ")
+		if g.comments != nil && n.FunctionKw != 0 {
+			g.printGap(n.Function, n.FunctionKw)
+		}
 	}
 	g.writeString("function")
 	if n.Generator {
@@ -421,11 +487,20 @@ func (g *GenVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 
 func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 	g.writeString("class")
-	if n.Name != nil {
+	if g.comments != nil {
+		g.printGap(n.Class, classHeaderHi(n))
+	}
+	if classHasName(n) {
 		g.writeByte(' ')
 		g.gen(n.Name)
+	} else if n.Name != nil {
+		// Anonymous class still has Identifier{Idx:0}; keep minify `class {}` space.
+		g.writeByte(' ')
 	}
 	if n.SuperClass != nil {
+		if classHasName(n) {
+			g.printGap(n.Name.Idx1(), n.SuperClass.Idx0())
+		}
 		g.writeString(" extends ")
 		g.genExpr(n.SuperClass, ast.PrecedenceAssign, 0)
 	}
@@ -433,8 +508,11 @@ func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 	g.writeByte('{')
 
 	g.indent++
+	prevEnd := n.Class
 	for _, element := range n.Body {
 		g.lineAndPad()
+		g.printGap(prevEnd, element.Idx0())
+		g.printLeading(element.Idx0())
 		switch element.Kind() {
 		case ast.ClassElemMethodDef:
 			e := element.MustMethodDef()
@@ -457,6 +535,7 @@ func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 					g.writeByte('*')
 				}
 			}
+			g.printGap(element.Idx0(), e.Key.Idx0())
 			g.genPropertyName(e.Key)
 			g.genMethodBody(e.Body)
 		case ast.ClassElemFieldDef:
@@ -464,6 +543,7 @@ func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 			if e.Static {
 				g.writeString("static ")
 			}
+			g.printGap(element.Idx0(), e.Key.Idx0())
 			g.genPropertyName(e.Key)
 			if e.Initializer != nil {
 				g.space()
@@ -476,11 +556,14 @@ func (g *GenVisitor) VisitClassLiteral(n *ast.ClassLiteral) {
 			e := element.MustStaticBlock()
 			g.writeString("static")
 			g.space()
+			g.printGap(element.Idx0(), e.Block.Idx0())
 			g.gen(e.Block)
 		}
+		prevEnd = element.Idx1()
 	}
 	g.indent--
 
+	g.printGap(prevEnd, n.RightBrace)
 	g.lineAndPad()
 	g.writeByte('}')
 }
@@ -578,9 +661,12 @@ func (g *GenVisitor) VisitTemplateLiteral(n *ast.TemplateLiteral) {
 
 func (g *GenVisitor) VisitArrayLiteral(n *ast.ArrayLiteral) {
 	g.writeByte('[')
+	prevEnd := n.LeftBracket + 1
 	for i, ex := range n.Value {
 		if !ex.IsNone() {
+			g.printAfter(prevEnd)
 			g.genExpr(&n.Value[i], ast.PrecedenceAssign, 0)
+			prevEnd = n.Value[i].Idx1()
 		}
 		if i < len(n.Value)-1 {
 			g.writeByte(',')
@@ -594,18 +680,25 @@ func (g *GenVisitor) VisitObjectLiteral(n *ast.ObjectLiteral) {
 	g.writeByte('{')
 
 	g.indent++
+	prevEnd := n.LeftBrace + 1
 	for i := range n.Value {
 		g.lineAndPad()
-		g.gen(&n.Value[i])
+		if g.comments != nil {
+			g.printGap(prevEnd, propertyStart(g.src, prevEnd, n.Value[i]))
+		}
+		// VisitWith, not gen(): gen() would print the key comments before async/get/set/*.
+		n.Value[i].VisitWith(g)
 		if i < len(n.Value)-1 {
 			g.writeByte(',')
 		}
+		prevEnd = n.Value[i].Idx1()
 	}
 	g.indent--
 
 	if len(n.Value) > 0 {
 		g.lineAndPad()
 	}
+	g.printGap(prevEnd, n.RightBrace)
 	g.writeByte('}')
 }
 
@@ -694,16 +787,23 @@ func (g *GenVisitor) VisitPatternShorthand(n *ast.PatternShorthand) {
 }
 
 func (g *GenVisitor) VisitProgram(n *ast.Program) {
+	eof := ast.Idx(len(g.src))
 	for i := range n.Body {
 		g.gen(&n.Body[i])
+		g.printGap(n.Body[i].Idx1(), nextStmtStart(n.Body, i, eof))
 		g.line()
 	}
 }
 
 func (g *GenVisitor) VisitStatements(n *ast.Statements) {
-	for i := range *n {
+	g.visitStmtList(*n, ast.Idx(len(g.src)))
+}
+
+func (g *GenVisitor) visitStmtList(body ast.Statements, end ast.Idx) {
+	for i := range body {
 		g.lineAndPad()
-		g.gen(&(*n)[i])
+		g.gen(&body[i])
+		g.printGap(body[i].Idx1(), nextStmtStart(body, i, end))
 	}
 }
 
@@ -711,12 +811,17 @@ func (g *GenVisitor) VisitBlockStatement(n *ast.BlockStatement) {
 	g.writeByte('{')
 
 	g.indent++
-	g.VisitStatements(&n.List)
+	g.visitStmtList(n.List, n.RightBrace)
 	g.indent--
 
 	if len(n.List) > 0 {
 		g.lineAndPad()
 	}
+	prevEnd := n.LeftBrace + 1
+	if len(n.List) > 0 {
+		prevEnd = n.List[len(n.List)-1].Idx1()
+	}
+	g.printGap(prevEnd, n.RightBrace)
 	g.writeByte('}')
 }
 
@@ -739,9 +844,6 @@ func (g *GenVisitor) VisitExpressionStatement(n *ast.ExpressionStatement) {
 		g.genExpr(n.Expression, ast.PrecedenceLowest, 0)
 	}
 	g.writeByte(';')
-	if len(n.Comment) > 0 && !g.opts.Minified {
-		g.writeString(" // " + n.Comment)
-	}
 }
 
 func (g *GenVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
@@ -755,9 +857,6 @@ func (g *GenVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
 		}
 	}
 	g.writeByte(';')
-	if len(n.Comment) > 0 && !g.opts.Minified {
-		g.writeString(" // " + n.Comment)
-	}
 }
 
 func (g *GenVisitor) VisitVariableDeclarator(n *ast.VariableDeclarator) {
@@ -931,7 +1030,14 @@ func (g *GenVisitor) VisitSwitchStatement(n *ast.SwitchStatement) {
 	g.indent++
 	for i := range n.Body {
 		g.lineAndPad()
-		g.gen(&n.Body[i])
+		end := n.RightBrace
+		if i+1 < len(n.Body) {
+			end = n.Body[i+1].Idx0()
+		}
+		if end == 0 {
+			end = ast.Idx(len(g.src))
+		}
+		g.visitSwitchCase(&n.Body[i], end)
 	}
 	g.indent--
 
@@ -942,6 +1048,10 @@ func (g *GenVisitor) VisitSwitchStatement(n *ast.SwitchStatement) {
 }
 
 func (g *GenVisitor) VisitSwitchCase(n *ast.SwitchCase) {
+	g.visitSwitchCase(n, ast.Idx(len(g.src)))
+}
+
+func (g *GenVisitor) visitSwitchCase(n *ast.SwitchCase, end ast.Idx) {
 	if n.Test != nil {
 		g.writeString("case ")
 		g.genExpr(n.Test, ast.PrecedenceLowest, 0)
@@ -950,10 +1060,7 @@ func (g *GenVisitor) VisitSwitchCase(n *ast.SwitchCase) {
 		g.writeString("default:")
 	}
 	g.indent++
-	for i := range n.Consequent {
-		g.lineAndPad()
-		g.gen(&n.Consequent[i])
-	}
+	g.visitStmtList(n.Consequent, end)
 	g.indent--
 }
 
@@ -1049,6 +1156,7 @@ func (g *GenVisitor) VisitParameterList(n *ast.ParameterList) {
 		if i < len(n.List)-1 {
 			g.writeByte(',')
 			g.space()
+			g.printGap(n.List[i].Idx1(), n.List[i+1].Idx0())
 		}
 	}
 
@@ -1064,13 +1172,13 @@ func (g *GenVisitor) VisitParameterList(n *ast.ParameterList) {
 }
 
 func (g *GenVisitor) VisitMemberProperty(n *ast.MemberProperty) {
-	g.genMemberProperty(n, false)
+	g.genMemberProperty(n, false, 0)
 }
 
 // genMemberProperty emits the property part of a member access. When optional
 // is set (the access was reached through Optional), the connector becomes the
 // optional-chaining form: `.x` -> `?.x` and `[x]` -> `?.[x]`.
-func (g *GenVisitor) genMemberProperty(n *ast.MemberProperty, optional bool) {
+func (g *GenVisitor) genMemberProperty(n *ast.MemberProperty, optional bool, objEnd ast.Idx) {
 	switch n.Kind() {
 	case ast.MemPropIdentifier:
 		if optional {
@@ -1078,10 +1186,16 @@ func (g *GenVisitor) genMemberProperty(n *ast.MemberProperty, optional bool) {
 		} else {
 			g.writeByte('.')
 		}
+		if objEnd != 0 {
+			g.printGap(objEnd, n.MustIdentifier().Idx)
+		}
 		g.gen(n.MustIdentifier())
 	case ast.MemPropComputed:
 		if optional {
 			g.writeString("?.")
+		}
+		if objEnd != 0 {
+			g.printGap(objEnd, n.MustComputed().Idx0())
 		}
 		g.writeByte('[')
 		// Assignment precedence keeps a comma sequence wrapped: a[(b,c)].
@@ -1112,10 +1226,15 @@ func (g *GenVisitor) VisitPropertyKeyValue(n *ast.PropertyKeyValue) {
 	g.genPropertyName(n.Key)
 	g.writeByte(':')
 	g.space()
+	g.printGap(n.Key.Idx1(), n.Value.Idx0())
 	g.genExpr(n.Value, ast.PrecedenceAssign, 0)
 }
 
 func (g *GenVisitor) VisitPropertyMethod(n *ast.PropertyMethod) {
+	kw, key := n.Body.Function, n.Key.Idx0()
+	if kw != key {
+		g.printLeading(kw)
+	}
 	if n.Body.Async {
 		g.writeString("async")
 		if !n.Body.Generator {
@@ -1125,18 +1244,35 @@ func (g *GenVisitor) VisitPropertyMethod(n *ast.PropertyMethod) {
 	if n.Body.Generator {
 		g.writeByte('*')
 	}
+	if kw != key {
+		g.printGap(kw, key)
+	}
 	g.genPropertyName(n.Key)
 	g.genMethodBody(n.Body)
 }
 
 func (g *GenVisitor) VisitPropertyGetter(n *ast.PropertyGetter) {
+	kw, key := n.Body.Function, n.Key.Idx0()
+	if kw != key {
+		g.printLeading(kw)
+	}
 	g.writeString("get ")
+	if kw != key {
+		g.printGap(kw, key)
+	}
 	g.genPropertyName(n.Key)
 	g.genMethodBody(n.Body)
 }
 
 func (g *GenVisitor) VisitPropertySetter(n *ast.PropertySetter) {
+	kw, key := n.Body.Function, n.Key.Idx0()
+	if kw != key {
+		g.printLeading(kw)
+	}
 	g.writeString("set ")
+	if kw != key {
+		g.printGap(kw, key)
+	}
 	g.genPropertyName(n.Key)
 	g.genMethodBody(n.Body)
 }

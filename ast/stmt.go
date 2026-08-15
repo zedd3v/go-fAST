@@ -99,7 +99,6 @@ type (
 
 	ExpressionStatement struct {
 		Expression *Expression
-		Comment    string
 	}
 
 	IfStatement struct {
@@ -128,7 +127,8 @@ type (
 		Body         SwitchCases
 		Default      int
 
-		Switch Idx
+		Switch     Idx
+		RightBrace Idx
 	}
 
 	ThrowStatement struct {

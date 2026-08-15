@@ -74,7 +74,7 @@ func (n *ClassLiteral) Clone() *ClassLiteral {
 	if n.SuperClass != nil {
 		superclass = n.SuperClass.Clone()
 	}
-	return &ClassLiteral{Name: name, SuperClass: superclass, Body: *n.Body.Clone(), Class: n.Class, RightBrace: n.RightBrace}
+	return &ClassLiteral{Name: name, SuperClass: superclass, Body: *n.Body.Clone(), Class: n.Class, LeftBrace: n.LeftBrace, RightBrace: n.RightBrace}
 }
 func (n *ClassStaticBlock) Clone() *ClassStaticBlock {
 	return &ClassStaticBlock{Block: n.Block.Clone(), Static: n.Static}
@@ -102,7 +102,7 @@ func (n *EmptyStatement) Clone() *EmptyStatement {
 	return &EmptyStatement{Semicolon: n.Semicolon}
 }
 func (n *ExpressionStatement) Clone() *ExpressionStatement {
-	return &ExpressionStatement{Expression: n.Expression.Clone(), Comment: n.Comment}
+	return &ExpressionStatement{Expression: n.Expression.Clone()}
 }
 func (n *Expressions) Clone() *Expressions {
 	ns := make(Expressions, len(*n))
@@ -147,7 +147,7 @@ func (n *FunctionLiteral) Clone() *FunctionLiteral {
 	if n.Name != nil {
 		name = n.Name.Clone()
 	}
-	return &FunctionLiteral{Name: name, ParameterList: n.ParameterList.Clone(), Body: n.Body.Clone(), ScopeContext: n.ScopeContext, Function: n.Function, Async: n.Async, Generator: n.Generator}
+	return &FunctionLiteral{Name: name, ParameterList: n.ParameterList.Clone(), Body: n.Body.Clone(), ScopeContext: n.ScopeContext, Function: n.Function, FunctionKw: n.FunctionKw, Async: n.Async, Generator: n.Generator}
 }
 func (n *Identifier) Clone() *Identifier {
 	return &Identifier{Name: n.Name, ScopeContext: n.ScopeContext, Idx: n.Idx}
@@ -240,7 +240,9 @@ func (n *PrivateIdentifier) Clone() *PrivateIdentifier {
 	return &PrivateIdentifier{Identifier: n.Identifier.Clone()}
 }
 func (n *Program) Clone() *Program {
-	return &Program{Body: *n.Body.Clone()}
+	comments := make([]Comment, len(n.Comments))
+	copy(comments, n.Comments)
+	return &Program{Body: *n.Body.Clone(), Comments: comments, Source: n.Source}
 }
 func (n *Properties) Clone() *Properties {
 	ns := make(Properties, len(*n))
@@ -312,7 +314,7 @@ func (n *SwitchCases) Clone() *SwitchCases {
 	return &ns
 }
 func (n *SwitchStatement) Clone() *SwitchStatement {
-	return &SwitchStatement{Discriminant: n.Discriminant.Clone(), Body: *n.Body.Clone(), Default: n.Default, Switch: n.Switch}
+	return &SwitchStatement{Discriminant: n.Discriminant.Clone(), Body: *n.Body.Clone(), Default: n.Default, Switch: n.Switch, RightBrace: n.RightBrace}
 }
 func (n *TemplateElement) Clone() *TemplateElement {
 	return &TemplateElement{Literal: n.Literal, Parsed: n.Parsed, Idx: n.Idx}
@@ -355,7 +357,7 @@ func (n *UpdateExpression) Clone() *UpdateExpression {
 	return &UpdateExpression{Operand: n.Operand.Clone(), Idx: n.Idx, Operator: n.Operator, Postfix: n.Postfix}
 }
 func (n *VariableDeclaration) Clone() *VariableDeclaration {
-	return &VariableDeclaration{List: *n.List.Clone(), Comment: n.Comment, Idx: n.Idx, Kind: n.Kind}
+	return &VariableDeclaration{List: *n.List.Clone(), Idx: n.Idx, Kind: n.Kind}
 }
 func (n *VariableDeclarator) Clone() *VariableDeclarator {
 	var initializer *Expression

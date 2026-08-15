@@ -143,7 +143,7 @@ func findVisitableNodes(f *ast.File, specs map[string]astgen.UnionSpec) (types [
 			}
 
 			switch typeSpec.Name.Name {
-			case "ScopeContext", "Id":
+			case "ScopeContext", "Id", "Comment", "CommentKind", "CommentPosition", "CommentNewlines", "CommentContent":
 				continue
 			}
 
@@ -190,7 +190,7 @@ func findStructChildren(fields []*ast.Field) (children []Child) {
 			switch fieldType.Name {
 			case "Idx", "any", "bool", "int", "ScopeContext", "string", "MethodKind", "VarKind", "float64",
 				"UnaryOperator", "AssignmentOperator", "BinaryOperator", "UpdateOperator", "LogicalOperator",
-				"MetaPropertyKind":
+				"MetaPropertyKind", "Comment", "CommentKind", "CommentPosition", "CommentNewlines", "CommentContent":
 			default:
 				for _, name := range field.Names {
 					children = append(children, newChild(name.Name, optional))

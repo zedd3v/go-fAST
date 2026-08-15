@@ -8,7 +8,8 @@ type (
 
 		ScopeContext ScopeContext
 
-		Function Idx
+		Function   Idx
+		FunctionKw Idx // `function` token; same as Function when not async
 
 		Async, Generator bool
 	}

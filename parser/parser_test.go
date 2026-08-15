@@ -37,6 +37,15 @@ func mustParse(t *testing.T, code string) *ast.Program {
 	return p
 }
 
+func mustParseComments(t *testing.T, code string) *ast.Program {
+	t.Helper()
+	p, err := parser.ParseWithOptions(code, parser.Options{Comments: true})
+	if err != nil {
+		t.Fatalf("Failed to parse:\n%s\nError: %v", code, err)
+	}
+	return p
+}
+
 // roundTrip parses code, regenerates it, and returns the output.
 func roundTrip(t *testing.T, code string) string {
 	t.Helper()
@@ -51,6 +60,15 @@ func assertRoundTrip(t *testing.T, code, want string) {
 	got := roundTrip(t, code)
 	if got != want {
 		t.Errorf("roundTrip(%q)\n  got:  %s\n  want: %s", code, got, want)
+	}
+}
+
+func assertCommentRoundTrip(t *testing.T, code, want string) {
+	t.Helper()
+	p := mustParseComments(t, code)
+	got := strings.TrimSpace(generator.GenerateWithOptions(p, generator.Options{Comments: true}))
+	if got != want {
+		t.Errorf("commentRoundTrip(%q)\n  got:  %s\n  want: %s", code, got, want)
 	}
 }
 
@@ -2168,4 +2186,103 @@ func TestScannerAdvancesOnEveryByte(t *testing.T) {
 // Valid sources, including non-ASCII ones, must be unaffected.
 func TestScannerAcceptsNonASCIISources(t *testing.T) {
 	assertRoundTrip(t, "var café = '☕';", "var café = '☕';")
+}
+
+// ===========================================================================
+// COMMENTS
+// ===========================================================================
+
+func TestParseSkipsCommentsByDefault(t *testing.T) {
+	src := "/* a */ var x = 1 // b\n/* c */ y"
+	p, err := parser.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Comments) != 0 {
+		t.Fatalf("default Parse kept %d comments", len(p.Comments))
+	}
+	if len(p.Body) != 2 {
+		t.Fatalf("stmt count = %d; want 2", len(p.Body))
+	}
+	got := generator.Generate(p)
+	if strings.Contains(got, "/* a */") || strings.Contains(got, "// b") || strings.Contains(got, "/* c */") {
+		t.Fatalf("generate printed skipped comments: %q", got)
+	}
+}
+
+func TestParseCommentsOptIn(t *testing.T) {
+	p := mustParseComments(t, "/* a */ var x")
+	if len(p.Comments) != 1 || p.Comments[0].Text(p.Source) != "/* a */" {
+		t.Fatalf("Comments:true dropped comments: %#v", p.Comments)
+	}
+}
+
+func TestLeadingBlockCommentAST(t *testing.T) {
+	src := "/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]"
+	p := mustParseComments(t, src)
+	decl, ok := firstStmt(p, 0).(*ast.VariableDeclaration)
+	if !ok {
+		t.Fatalf("stmt = %T; want *VariableDeclaration", firstStmt(p, 0))
+	}
+	if p.Source != src {
+		t.Errorf("Source = %q; want input", p.Source)
+	}
+	if len(p.Comments) != 1 {
+		t.Fatalf("comments = %d; want 1", len(p.Comments))
+	}
+	c := p.Comments[0]
+	if !c.IsLeading() || c.Content != ast.ContentDumpMeta || c.Kind != ast.CommentSingleLineBlock {
+		t.Errorf("comment = %+v", c)
+	}
+	if c.AttachedTo != decl.Idx {
+		t.Errorf("AttachedTo = %d; want %d (var)", c.AttachedTo, decl.Idx)
+	}
+}
+
+func TestArrowCommentRewindNoDup(t *testing.T) {
+	src := "async (/* c */ x) => x"
+	p := mustParseComments(t, src)
+	if len(p.Comments) != 1 {
+		t.Fatalf("comments = %d; want 1", len(p.Comments))
+	}
+	if p.Comments[0].Text(src) != "/* c */" {
+		t.Fatalf("text = %q", p.Comments[0].Text(src))
+	}
+}
+
+func TestCommentTableCopiedOutOfPool(t *testing.T) {
+	p1 := mustParseComments(t, "/* a */ var x")
+	_ = mustParseComments(t, "/* bbb */ var y")
+	if len(p1.Comments) != 1 || p1.Comments[0].Text(p1.Source) != "/* a */" {
+		t.Fatalf("p1 comments corrupted: %#v", p1.Comments)
+	}
+}
+
+func TestCommentsAreWhitespace(t *testing.T) {
+	cases := []string{
+		"/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]",
+		"/* leading */ var v67 = heap[2]",
+		"var v67 = heap[2] /* trailing */",
+		"var v67 = /* mid */ heap[2]",
+		"var /* name */ v67 = heap[2]",
+		"// line\nvar v67 = heap[2]",
+		"/* a */ /* b */ var v67 = heap[2]",
+		"/* 7355685938729369933 pc=114796 dk=5 */ heap[2]",
+	}
+	for _, src := range cases {
+		if _, err := parser.Parse(src); err != nil {
+			t.Errorf("parse(%q): %v", src, err)
+		}
+	}
+}
+
+func TestLeadingBlockCommentRoundTrip(t *testing.T) {
+	assertCommentRoundTrip(t,
+		"/* 7355685938729369933 pc=114796 dk=5 */ var v67 = heap[2]",
+		"/* 7355685938729369933 pc=114796 dk=5 */\nvar v67 = heap[2];",
+	)
+	assertCommentRoundTrip(t,
+		"/* 7355685938729369933 pc=114796 dk=5 */ heap[2]",
+		"/* 7355685938729369933 pc=114796 dk=5 */\nheap[2];",
+	)
 }

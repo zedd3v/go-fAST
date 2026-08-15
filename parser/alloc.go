@@ -661,9 +661,9 @@ func (a *nodeAllocator) ReturnStatement(idx ast.Idx) *ast.ReturnStatement {
 	return n
 }
 
-func (a *nodeAllocator) IfStatement(test *ast.Expression) *ast.IfStatement {
+func (a *nodeAllocator) IfStatement(idx ast.Idx, test *ast.Expression) *ast.IfStatement {
 	n := a.ifStmt.make()
-	*n = ast.IfStatement{Test: test}
+	*n = ast.IfStatement{If: idx, Test: test}
 	return n
 }
 
@@ -673,15 +673,15 @@ func (a *nodeAllocator) ThrowStatement(idx ast.Idx, argument *ast.Expression) *a
 	return n
 }
 
-func (a *nodeAllocator) SwitchStatement(discriminant *ast.Expression) *ast.SwitchStatement {
+func (a *nodeAllocator) SwitchStatement(idx ast.Idx, discriminant *ast.Expression) *ast.SwitchStatement {
 	n := a.switchStm.make()
-	*n = ast.SwitchStatement{Discriminant: discriminant, Default: -1}
+	*n = ast.SwitchStatement{Switch: idx, Discriminant: discriminant, Default: -1}
 	return n
 }
 
-func (a *nodeAllocator) WithStatement(object *ast.Expression) *ast.WithStatement {
+func (a *nodeAllocator) WithStatement(idx ast.Idx, object *ast.Expression) *ast.WithStatement {
 	n := a.withStmt.make()
-	*n = ast.WithStatement{Object: object}
+	*n = ast.WithStatement{With: idx, Object: object}
 	return n
 }
 
@@ -715,14 +715,16 @@ func (a *nodeAllocator) ForOfStatement(idx ast.Idx, await bool, into *ast.ForInt
 	return n
 }
 
-func (a *nodeAllocator) WhileStatement(test *ast.Expression) *ast.WhileStatement {
+func (a *nodeAllocator) WhileStatement(idx ast.Idx, test *ast.Expression) *ast.WhileStatement {
 	n := a.whileStmt.make()
-	*n = ast.WhileStatement{Test: test}
+	*n = ast.WhileStatement{While: idx, Test: test}
 	return n
 }
 
-func (a *nodeAllocator) DoWhileStatement() *ast.DoWhileStatement {
-	return a.doWhile.make()
+func (a *nodeAllocator) DoWhileStatement(idx ast.Idx) *ast.DoWhileStatement {
+	n := a.doWhile.make()
+	*n = ast.DoWhileStatement{Do: idx}
+	return n
 }
 
 func (a *nodeAllocator) LabelledStatement(label *ast.Identifier, colon ast.Idx, stmt *ast.Statement) *ast.LabelledStatement {

@@ -20,7 +20,9 @@ type VisitableNode interface {
 }
 
 type Program struct {
-	Body Statements
+	Body     Statements
+	Comments []Comment // ordered by Start; generate drops orphans except Legal
+	Source   string    // parse input; Comment.Text reads from it
 }
 
 func (n *Program) Idx0() Idx {

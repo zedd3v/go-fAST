@@ -188,7 +188,7 @@ func (p *parser) parseMaybeAsyncFunction(declaration bool) *ast.FunctionLiteral 
 
 func (p *parser) parseFunction(declaration, async bool, start ast.Idx) *ast.FunctionLiteral {
 	node := p.alloc.FunctionLiteral(start, async)
-	p.expect(token.Function)
+	node.FunctionKw = p.expect(token.Function)
 
 	if p.currentKind() == token.Multiply {
 		node.Generator = true
@@ -287,7 +287,7 @@ func (p *parser) parseClass(declaration bool) *ast.ClassLiteral {
 		node.SuperClass = p.alloc.Expression(p.parseLeftHandSideExpressionAllowCall())
 	}
 
-	p.expect(token.LeftBrace)
+	node.LeftBrace = p.expect(token.LeftBrace)
 
 	elemMark := len(p.elemBuf)
 	for p.currentKind() != token.RightBrace && p.currentKind() != token.Eof {
@@ -447,9 +447,9 @@ func (p *parser) parseThrowStatement() ast.Statement {
 }
 
 func (p *parser) parseSwitchStatement() ast.Statement {
-	p.expect(token.Switch)
+	idx := p.expect(token.Switch)
 	p.expect(token.LeftParenthesis)
-	node := p.alloc.SwitchStatement(p.alloc.Expression(p.parseExpression()))
+	node := p.alloc.SwitchStatement(idx, p.alloc.Expression(p.parseExpression()))
 	p.expect(token.RightParenthesis)
 
 	p.expect(token.LeftBrace)
@@ -459,7 +459,7 @@ func (p *parser) parseSwitchStatement() ast.Statement {
 
 	for index := 0; p.currentKind() != token.Eof; index++ {
 		if p.currentKind() == token.RightBrace {
-			p.next()
+			node.RightBrace = p.expect(token.RightBrace)
 			break
 		}
 
@@ -478,9 +478,9 @@ func (p *parser) parseSwitchStatement() ast.Statement {
 }
 
 func (p *parser) parseWithStatement() ast.Statement {
-	p.expect(token.With)
+	idx := p.expect(token.With)
 	p.expect(token.LeftParenthesis)
-	node := p.alloc.WithStatement(p.alloc.Expression(p.parseExpression()))
+	node := p.alloc.WithStatement(idx, p.alloc.Expression(p.parseExpression()))
 	p.expect(token.RightParenthesis)
 	p.scope.allowLet = false
 	node.Body = p.alloc.Statement(p.parseStatement())
@@ -682,8 +682,8 @@ func (p *parser) parseDoWhileStatement() ast.Statement {
 	inIteration := p.scope.inIteration
 	p.scope.inIteration = true
 
-	p.expect(token.Do)
-	node := p.alloc.DoWhileStatement()
+	idx := p.expect(token.Do)
+	node := p.alloc.DoWhileStatement(idx)
 	if p.currentKind() == token.LeftBrace {
 		node.Body = p.alloc.Statement(ast.NewBlockStmt(p.parseBlockStatement()))
 	} else {
@@ -704,9 +704,9 @@ func (p *parser) parseDoWhileStatement() ast.Statement {
 }
 
 func (p *parser) parseWhileStatement() ast.Statement {
-	p.expect(token.While)
+	idx := p.expect(token.While)
 	p.expect(token.LeftParenthesis)
-	node := p.alloc.WhileStatement(p.alloc.Expression(p.parseExpression()))
+	node := p.alloc.WhileStatement(idx, p.alloc.Expression(p.parseExpression()))
 	p.expect(token.RightParenthesis)
 	node.Body = p.alloc.Statement(p.parseIterationStatement())
 
@@ -714,9 +714,9 @@ func (p *parser) parseWhileStatement() ast.Statement {
 }
 
 func (p *parser) parseIfStatement() ast.Statement {
-	p.expect(token.If)
+	idx := p.expect(token.If)
 	p.expect(token.LeftParenthesis)
-	node := p.alloc.IfStatement(p.alloc.Expression(p.parseExpression()))
+	node := p.alloc.IfStatement(idx, p.alloc.Expression(p.parseExpression()))
 	p.expect(token.RightParenthesis)
 
 	if p.currentKind() == token.LeftBrace {
@@ -747,7 +747,9 @@ func (p *parser) parseSourceElements() (body ast.Statements) {
 
 func (p *parser) parseProgram() *ast.Program {
 	return &ast.Program{
-		Body: p.parseSourceElements(),
+		Body:     p.parseSourceElements(),
+		Comments: p.scanner.TakeComments(),
+		Source:   p.str,
 	}
 }
 
