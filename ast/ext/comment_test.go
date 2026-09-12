@@ -10,8 +10,8 @@ import (
 	"github.com/t14raptor/go-fast/parser"
 )
 
-// dropFirstStmt deletes the first statement. RemoveHelper does not touch
-// Program.Comments, so those comments become orphans.
+// dropFirstStmt deletes the first statement. RemoveHelper prunes comments
+// attached to the removed span; legal comments are retargeted to the next stmt.
 type dropFirstStmt struct {
 	ext.RemoveHelper
 	dropped bool
@@ -43,8 +43,14 @@ func TestRemoveHelperDropsDumpMetaKeepsLegalOrphan(t *testing.T) {
 	if len(p.Body) != 1 {
 		t.Fatalf("stmt count after remove = %d; want 1", len(p.Body))
 	}
-	if len(p.Comments) != 2 {
-		t.Fatalf("RemoveHelper rewrote comments: %d; want 2", len(p.Comments))
+	if len(p.Comments) != 1 {
+		t.Fatalf("comment table = %d; want 1 (dump dropped)", len(p.Comments))
+	}
+	if !p.Comments[0].IsLegal() {
+		t.Fatalf("kept comment is not legal: %#v", p.Comments[0])
+	}
+	if p.Comments[0].AttachedTo != p.Body[0].Idx0() {
+		t.Fatalf("legal AttachedTo = %d; want next stmt %d", p.Comments[0].AttachedTo, p.Body[0].Idx0())
 	}
 
 	got := generator.GenerateWithOptions(p, generator.Options{Comments: true})

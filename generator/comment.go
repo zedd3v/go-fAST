@@ -31,32 +31,53 @@ func getPrinted(n int) []bool {
 	return s
 }
 
-func (g *GenVisitor) releaseCommentState() {
-	if g.attach != nil {
-		attachPool.Put(g.attach[:0])
-		g.attach = nil
-	}
-	if g.printed != nil {
-		printedPool.Put(g.printed[:0])
-		g.printed = nil
-	}
-	if g.byAttach != nil {
-		clear(g.byAttach)
-		byAttachPool.Put(g.byAttach)
-		g.byAttach = nil
-	}
+type commentState struct {
+	src         string
+	comments    []ast.Comment
+	printed     []bool
+	attach      []int
+	byAttach    map[ast.Idx][2]int
+	gapI        int
+	binaryStack []commentBinaryEntry
 }
 
-func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
-	n := len(cs)
+type commentBinaryEntry struct {
+	op        string
+	rightPrec ast.Precedence
+	right     *ast.Expression
+	wrap      bool
+	ctx       context
+	leftEnd   ast.Idx
+}
+
+func (g *GenVisitor) releaseCommentState() {
+	cs := g.cs
+	if cs == nil {
+		return
+	}
+	if cs.attach != nil {
+		attachPool.Put(cs.attach[:0])
+	}
+	if cs.printed != nil {
+		printedPool.Put(cs.printed[:0])
+	}
+	if cs.byAttach != nil {
+		clear(cs.byAttach)
+		byAttachPool.Put(cs.byAttach)
+	}
+	g.cs = nil
+}
+
+func (g *GenVisitor) buildCommentState(src string, comments []ast.Comment) {
+	n := len(comments)
 	if n == 0 {
 		return
 	}
 	printed := getPrinted(n)
 	if g.opts.Minified {
 		keep := false
-		for i := range cs {
-			if cs[i].StayLeading() {
+		for i := range comments {
+			if comments[i].StayLeading() {
 				keep = true
 			} else {
 				printed[i] = true
@@ -68,11 +89,11 @@ func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
 		}
 	}
 	attach := getAttach(n)
-	for i := range cs {
+	for i := range comments {
 		attach[i] = i
 	}
 	sort.Slice(attach, func(i, j int) bool {
-		a, b := &cs[attach[i]], &cs[attach[j]]
+		a, b := &comments[attach[i]], &comments[attach[j]]
 		if a.AttachedTo != b.AttachedTo {
 			return a.AttachedTo < b.AttachedTo
 		}
@@ -80,29 +101,32 @@ func (g *GenVisitor) buildCommentState(cs []ast.Comment) {
 	})
 	byAttach := byAttachPool.Get().(map[ast.Idx][2]int)
 	for i := 0; i < n; {
-		at := cs[attach[i]].AttachedTo
+		at := comments[attach[i]].AttachedTo
 		j := i + 1
-		for j < n && cs[attach[j]].AttachedTo == at {
+		for j < n && comments[attach[j]].AttachedTo == at {
 			j++
 		}
 		byAttach[at] = [2]int{i, j}
 		i = j
 	}
-	g.comments = cs
-	g.printed = printed
-	g.attach = attach
-	g.byAttach = byAttach
+	g.cs = &commentState{
+		src:      src,
+		comments: comments,
+		printed:  printed,
+		attach:   attach,
+		byAttach: byAttach,
+	}
 }
 
 func (g *GenVisitor) printLeading(start ast.Idx) {
-	if g.comments == nil {
+	if g.cs == nil {
 		return
 	}
 	g.printAttached(start, ast.CommentLeading)
 }
 
 func (g *GenVisitor) printTrailing(start ast.Idx) {
-	if g.comments == nil {
+	if g.cs == nil {
 		return
 	}
 	g.printAttached(start, ast.CommentTrailing)
@@ -110,24 +134,25 @@ func (g *GenVisitor) printTrailing(start ast.Idx) {
 
 //go:noinline
 func (g *GenVisitor) printAttached(start ast.Idx, pos ast.CommentPosition) {
-	r, ok := g.byAttach[start]
+	cs := g.cs
+	r, ok := cs.byAttach[start]
 	if !ok {
 		return
 	}
-	cs := g.comments
-	idx := g.attach
+	comments := cs.comments
+	idx := cs.attach
 	for i := r[0]; i < r[1]; i++ {
 		k := idx[i]
-		if g.printed[k] || cs[k].Position != pos {
+		if cs.printed[k] || comments[k].Position != pos {
 			continue
 		}
-		g.printed[k] = true
-		g.printComment(cs[k])
+		cs.printed[k] = true
+		g.printComment(comments[k])
 	}
 }
 
 func (g *GenVisitor) printGap(lo, hi ast.Idx) {
-	if g.comments == nil || lo >= hi {
+	if g.cs == nil || lo >= hi {
 		return
 	}
 	g.printGapBody(lo, hi)
@@ -135,40 +160,42 @@ func (g *GenVisitor) printGap(lo, hi ast.Idx) {
 
 //go:noinline
 func (g *GenVisitor) printGapBody(lo, hi ast.Idx) {
-	cs := g.comments
-	i := g.gapI
-	if i >= len(cs) || cs[i].Start < lo || i > 0 && cs[i-1].Start >= lo {
-		i = sort.Search(len(cs), func(i int) bool { return cs[i].Start >= lo })
+	cs := g.cs
+	comments := cs.comments
+	i := cs.gapI
+	if i >= len(comments) || comments[i].Start < lo || i > 0 && comments[i-1].Start >= lo {
+		i = sort.Search(len(comments), func(i int) bool { return comments[i].Start >= lo })
 	}
-	for ; i < len(cs) && cs[i].Start < hi; i++ {
-		if g.printed[i] {
+	for ; i < len(comments) && comments[i].Start < hi; i++ {
+		if cs.printed[i] {
 			continue
 		}
-		g.printed[i] = true
-		g.printComment(cs[i])
+		cs.printed[i] = true
+		g.printComment(comments[i])
 	}
-	g.gapI = i
+	cs.gapI = i
 }
 
 func (g *GenVisitor) printLegalOrphans() {
-	for i := range g.comments {
-		if g.printed[i] || !g.comments[i].IsLegal() {
+	cs := g.cs
+	for i := range cs.comments {
+		if cs.printed[i] || !cs.comments[i].IsLegal() {
 			continue
 		}
-		g.printed[i] = true
-		g.printComment(g.comments[i])
+		cs.printed[i] = true
+		g.printComment(cs.comments[i])
 	}
 }
 
 func (g *GenVisitor) printAfter(prevEnd ast.Idx) {
-	if g.comments == nil {
+	if g.cs == nil {
 		return
 	}
-	g.printGap(prevEnd, ast.Idx(nextTokenStart(g.src, int(prevEnd))))
+	g.printGap(prevEnd, ast.Idx(nextTokenStart(g.cs.src, int(prevEnd))))
 }
 
 func (g *GenVisitor) printComment(c ast.Comment) {
-	text := c.Text(g.src)
+	text := c.Text(g.cs.src)
 	if c.IsLine() {
 		if g.opts.Minified {
 			switch c.Content {
@@ -283,6 +310,29 @@ func nextStmtStart(body []ast.Statement, i int, eof ast.Idx) ast.Idx {
 		return body[i+1].Idx0()
 	}
 	return eof
+}
+
+// keywordIdx is the start of kw after lo, skipping whitespace and comments.
+// It returns 0 when src is empty or kw is not the next token.
+func keywordIdx(src string, lo ast.Idx, kw string) ast.Idx {
+	if src == "" || kw == "" {
+		return 0
+	}
+	i := skipWSAndComments(src, int(lo))
+	if i+len(kw) > len(src) || src[i:i+len(kw)] != kw {
+		return 0
+	}
+	if i+len(kw) < len(src) && isIdentContinue(src[i+len(kw)]) {
+		return 0
+	}
+	return ast.Idx(i)
+}
+
+func isIdentContinue(c byte) bool {
+	return c == '_' || c == '$' ||
+		c >= 'a' && c <= 'z' ||
+		c >= 'A' && c <= 'Z' ||
+		c >= '0' && c <= '9'
 }
 
 func skipWSAndComments(src string, i int) int {

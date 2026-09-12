@@ -13,6 +13,10 @@ import (
 type parser struct {
 	scanner scanner.Scanner
 
+	hasPeek bool
+	peekTok scanner.Token
+	peekEsc string
+
 	str string
 
 	scope *scope
@@ -81,6 +85,9 @@ func putParser(p *parser) {
 	}
 	p.collectComments = false
 	p.scanner = scanner.Scanner{}
+	p.hasPeek = false
+	p.peekTok = scanner.Token{}
+	p.peekEsc = ""
 	p.scope = nil
 	p.errors = nil
 	p.recover.idx = 0
@@ -138,6 +145,12 @@ func (p *parser) parse() (*ast.Program, error) {
 
 // next ...
 func (p *parser) next() {
+	if p.hasPeek {
+		p.scanner.Token = p.peekTok
+		p.scanner.EscapedStr = p.peekEsc
+		p.hasPeek = false
+		return
+	}
 	p.scanner.Next()
 }
 
@@ -145,12 +158,19 @@ type parserState struct {
 	c scanner.Checkpoint
 
 	errors error
+
+	hasPeek bool
+	peekTok scanner.Token
+	peekEsc string
 }
 
 func (p *parser) mark() parserState {
 	return parserState{
-		c:      p.scanner.Checkpoint(),
-		errors: p.errors,
+		c:       p.scanner.Checkpoint(),
+		errors:  p.errors,
+		hasPeek: p.hasPeek,
+		peekTok: p.peekTok,
+		peekEsc: p.peekEsc,
 	}
 }
 
@@ -158,10 +178,28 @@ func (p *parser) restore(state parserState) {
 	p.scanner.Rewind(state.c)
 	// Truncate parser errors back to checkpoint state
 	p.errors = state.errors
+	p.hasPeek = state.hasPeek
+	p.peekTok = state.peekTok
+	p.peekEsc = state.peekEsc
 }
 
 func (p *parser) peek() scanner.Token {
-	return p.scanner.Peek()
+	if !p.hasPeek {
+		savedTok := p.scanner.Token
+		savedEsc := p.scanner.EscapedStr
+		p.scanner.Next()
+		p.peekTok = p.scanner.Token
+		p.peekEsc = p.scanner.EscapedStr
+		p.scanner.Token = savedTok
+		p.scanner.EscapedStr = savedEsc
+		p.hasPeek = true
+	}
+	return p.peekTok
+}
+
+func (p *parser) nextTemplatePart() {
+	p.hasPeek = false
+	p.scanner.NextTemplatePart()
 }
 
 func (p *parser) currentString() string {

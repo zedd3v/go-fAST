@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-func (s *Scanner) scan() {
+func (s *Scanner) Next() {
 	s.Token.HasEscape = false
 	s.Token.OnNewLine = false
 
@@ -161,11 +161,19 @@ func (s *Scanner) scan() {
 				switch b2 {
 				case '/':
 					s.ConsumeByte()
-					s.recordLineComment(s.Token.Idx0)
+					if s.trivia != nil {
+						s.recordLineComment(s.Token.Idx0)
+					} else {
+						s.skipSingleLineComment()
+					}
 					continue
 				case '*':
 					s.ConsumeByte()
-					s.recordBlockComment(s.Token.Idx0)
+					if s.trivia != nil {
+						s.recordBlockComment(s.Token.Idx0)
+					} else {
+						s.skipMultiLineComment()
+					}
 					continue
 				}
 			}
@@ -541,7 +549,7 @@ func (s *Scanner) scan() {
 				s.ConsumeRune()
 				s.Token.OnNewLine = true
 				if s.trivia != nil {
-					s.trivia.handleNewline()
+					s.noteNewline()
 				}
 				continue
 			case unicode.IsSpace(c):
@@ -572,6 +580,6 @@ func (s *Scanner) scan() {
 	}
 	s.Token.Idx1 = s.src.pos
 	if s.trivia != nil {
-		s.trivia.handleToken(s.Token.Kind, s.Token.Idx0)
+		s.noteToken()
 	}
 }

@@ -77,6 +77,7 @@ func (s *Scanner) skipSingleLineComment() {
 	}
 }
 
+//go:noinline
 func (s *Scanner) recordLineComment(start ast.Idx) {
 	s.skipSingleLineComment()
 	if s.trivia != nil {
@@ -84,6 +85,7 @@ func (s *Scanner) recordLineComment(start ast.Idx) {
 	}
 }
 
+//go:noinline
 func (s *Scanner) recordBlockComment(start ast.Idx) {
 	onNL := s.skipMultiLineComment()
 	if s.trivia == nil {

@@ -2239,6 +2239,18 @@ func TestLeadingBlockCommentAST(t *testing.T) {
 	}
 }
 
+func TestPeekDoesNotDuplicateComments(t *testing.T) {
+	// `async function` peeks after `async`. The comment must be recorded once.
+	src := "async /* c */ function f() {}"
+	p := mustParseComments(t, src)
+	if len(p.Comments) != 1 {
+		t.Fatalf("comments = %d; want 1", len(p.Comments))
+	}
+	if p.Comments[0].Text(src) != "/* c */" {
+		t.Fatalf("text = %q", p.Comments[0].Text(src))
+	}
+}
+
 func TestArrowCommentRewindNoDup(t *testing.T) {
 	src := "async (/* c */ x) => x"
 	p := mustParseComments(t, src)

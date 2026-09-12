@@ -3,17 +3,20 @@ package generator
 import "github.com/t14raptor/go-fast/ast"
 
 type binaryExprEntry struct {
+	right     *ast.Expression
 	op        string
 	rightPrec ast.Precedence
-	right     *ast.Expression
 	wrap      bool
 	ctx       context
-	leftEnd   ast.Idx
 }
 
 // genBinaryExpr linearizes nested binary/logical trees into an iterative
 // loop instead of recursing down the left spine.
 func (g *GenVisitor) genBinaryExpr(expr *ast.Expression, minPrec ast.Precedence, ctx context) {
+	if g.cs != nil {
+		g.genBinaryExprC(expr, minPrec, ctx)
+		return
+	}
 	base := len(g.binaryStack)
 
 descend:
@@ -83,7 +86,6 @@ descend:
 			right:     right,
 			wrap:      wrap,
 			ctx:       ctx,
-			leftEnd:   left.Idx1(),
 		})
 
 		expr, minPrec = left, leftPrec
@@ -96,8 +98,6 @@ descend:
 		}
 		e := g.binaryStack[length-1]
 		g.binaryStack = g.binaryStack[:length-1]
-
-		g.printGap(e.leftEnd, e.right.Idx0())
 
 		if e.op == "in" || e.op == "instanceof" {
 			// Keyword operators (in, instanceof) always need spaces.

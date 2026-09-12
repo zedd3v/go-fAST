@@ -23,10 +23,6 @@ type Scanner struct {
 	errors *error
 
 	trivia *triviaBuilder
-
-	hasPeek   bool
-	peeked    Token
-	peekedEsc string
 }
 
 func NewScanner(src string, errors *error) Scanner {
@@ -63,10 +59,6 @@ type Checkpoint struct {
 	escapedStr string
 	errors     error
 
-	hasPeek   bool
-	peeked    Token
-	peekedEsc string
-
 	trivia triviaSnap
 }
 
@@ -76,9 +68,6 @@ func (s *Scanner) Checkpoint() Checkpoint {
 		tok:        s.Token,
 		escapedStr: s.EscapedStr,
 		errors:     *s.errors,
-		hasPeek:    s.hasPeek,
-		peeked:     s.peeked,
-		peekedEsc:  s.peekedEsc,
 	}
 	if s.trivia != nil {
 		cp.trivia = s.trivia.snapshot()
@@ -91,36 +80,19 @@ func (s *Scanner) Rewind(c Checkpoint) {
 	s.Token = c.tok
 	s.EscapedStr = c.escapedStr
 	*s.errors = c.errors
-	s.hasPeek = c.hasPeek
-	s.peeked = c.peeked
-	s.peekedEsc = c.peekedEsc
 	if s.trivia != nil {
 		s.trivia.restore(c.trivia)
 	}
 }
 
-func (s *Scanner) Next() {
-	if s.hasPeek {
-		s.Token = s.peeked
-		s.EscapedStr = s.peekedEsc
-		s.hasPeek = false
-		return
-	}
-	s.scan()
+//go:noinline
+func (s *Scanner) noteToken() {
+	s.trivia.handleToken(s.Token.Kind, s.Token.Idx0)
 }
 
-func (s *Scanner) Peek() Token {
-	if !s.hasPeek {
-		savedTok := s.Token
-		savedEsc := s.EscapedStr
-		s.scan()
-		s.peeked = s.Token
-		s.peekedEsc = s.EscapedStr
-		s.Token = savedTok
-		s.EscapedStr = savedEsc
-		s.hasPeek = true
-	}
-	return s.peeked
+//go:noinline
+func (s *Scanner) noteNewline() {
+	s.trivia.handleNewline()
 }
 
 func getTrivia() *triviaBuilder {
@@ -222,7 +194,6 @@ func (s *Scanner) AdvanceIfByteEquals(b byte) bool {
 }
 
 func (s *Scanner) NextTemplatePart() {
-	s.hasPeek = false
 	s.Token.Idx0 = s.src.Offset() - 1
 	s.Token.Kind = s.ReadTemplateLiteral(token.TemplateMiddle, token.TemplateTail)
 	s.Token.Idx1 = s.src.Offset()

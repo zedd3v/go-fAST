@@ -379,34 +379,6 @@ func TestTriviaDedupWithoutTruncate(t *testing.T) {
 	}
 }
 
-func TestTriviaPeekDoesNotRelex(t *testing.T) {
-	src := "a /* c */ b"
-	var err error
-	s := NewScanner(src, &err)
-	s.CollectComments(true)
-	s.Next()
-	cur := s.Token
-	pk := s.Peek()
-	if s.Token != cur {
-		t.Fatal("Peek changed current Token")
-	}
-	if pk.Kind != token.Identifier || s.src.Slice(pk.Idx0, pk.Idx1) != "b" {
-		t.Fatalf("peek = %v %q", pk.Kind, s.src.Slice(pk.Idx0, pk.Idx1))
-	}
-	if s.Peek() != pk {
-		t.Fatal("second Peek rescaned")
-	}
-	s.Next()
-	if s.Token != pk {
-		t.Fatal("Next did not consume peek")
-	}
-	s.Next()
-	got := s.TakeComments()
-	if len(got) != 1 {
-		t.Fatalf("len=%d; want 1", len(got))
-	}
-}
-
 func TestTriviaUnterminatedBlock(t *testing.T) {
 	src := "/* oops"
 	got, err := collectComments(src)

@@ -7,7 +7,7 @@ import (
 func (s *Scanner) handleLineBreak() {
 	s.Token.OnNewLine = true
 	if s.trivia != nil {
-		s.trivia.handleNewline()
+		s.noteNewline()
 	}
 
 	pos := s.src.pos

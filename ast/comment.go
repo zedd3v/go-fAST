@@ -98,6 +98,33 @@ func Move(comments []Comment, from, to Idx) {
 	}
 }
 
+// PruneAttached drops comments attached inside a removed span [lo, end).
+// end is next when next != 0 (the next sibling start); otherwise hi.
+// Legal comments are kept and retargeted to next as leading.
+func PruneAttached(comments []Comment, lo, hi, next Idx) []Comment {
+	end := hi
+	if next != 0 {
+		end = next
+	}
+	if lo >= end {
+		return comments
+	}
+	w := 0
+	for i := range comments {
+		c := comments[i]
+		if c.AttachedTo >= lo && c.AttachedTo < end {
+			if !c.IsLegal() {
+				continue
+			}
+			c.AttachedTo = next
+			c.Position = CommentLeading
+		}
+		comments[w] = c
+		w++
+	}
+	return comments[:w]
+}
+
 // Leading appends comments attached to start that are leading onto dst.
 func Leading(comments []Comment, start Idx, dst []Comment) []Comment {
 	return filterAttached(comments, start, CommentLeading, dst)

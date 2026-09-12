@@ -594,7 +594,7 @@ func (p *parser) parseTemplateLiteral() *ast.TemplateLiteral {
 			break
 		}
 		// Re-tokenize the `}` as the start of the next template part
-		p.scanner.NextTemplatePart()
+		p.nextTemplatePart()
 	}
 	res.Expressions = p.finishExprBuf(mark)
 	return res

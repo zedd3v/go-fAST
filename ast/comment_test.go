@@ -65,6 +65,36 @@ func TestLeadingTrailingFilterByAttachedTo(t *testing.T) {
 	}
 }
 
+func TestPruneAttachedDropsNonLegalRetargetsLegal(t *testing.T) {
+	cs := []Comment{
+		{Start: 0, End: 10, AttachedTo: 20, Position: CommentLeading, Content: ContentDumpMeta},
+		{Start: 11, End: 20, AttachedTo: 20, Position: CommentLeading, Content: ContentLegal},
+		{Start: 40, End: 44, AttachedTo: 50, Position: CommentLeading},
+	}
+
+	got := PruneAttached(cs, 20, 30, 50)
+	if len(got) != 2 {
+		t.Fatalf("len = %d; want 2 (dump dropped, legal+next kept)", len(got))
+	}
+	if got[0].Content != ContentLegal || got[0].AttachedTo != 50 || got[0].Position != CommentLeading {
+		t.Fatalf("legal = %#v; want retarget 50 leading", got[0])
+	}
+	if got[1].AttachedTo != 50 || got[1].Start != 40 {
+		t.Fatalf("unrelated = %#v; want Start 40 attach 50", got[1])
+	}
+}
+
+func TestPruneAttachedUsesNextAsEnd(t *testing.T) {
+	cs := []Comment{
+		{Start: 25, End: 29, AttachedTo: 28, Position: CommentTrailing}, // semicolon after hi
+		{Start: 30, End: 34, AttachedTo: 50, Position: CommentLeading},
+	}
+	got := PruneAttached(cs, 20, 27, 50)
+	if len(got) != 1 || got[0].Start != 30 {
+		t.Fatalf("got %#v; want only comment attached to next", got)
+	}
+}
+
 func TestMoveRetargetsAttachedTo(t *testing.T) {
 	cs := []Comment{
 		{Start: 0, End: 4, AttachedTo: 10, Position: CommentLeading},
